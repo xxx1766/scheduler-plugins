@@ -3,7 +3,7 @@ kind: Pod
 metadata:
   name: yolo11-test
 spec:
-  schedulerName: scheduler-plugins-controller
+  schedulerName: scheduler-plugins-scheduler
   containers:
   - name: yolo11
     image: yolo11:latest
