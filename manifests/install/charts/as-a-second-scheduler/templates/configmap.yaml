@@ -16,6 +16,10 @@ data:
     # Compose all plugins in one profile
     - schedulerName: {{ .Values.scheduler.name }}
       plugins:
+        score:
+          enabled:
+          - name: 'BundleLocality'
+            weight: 5
         multiPoint:
           enabled:
           {{- range $.Values.plugins.enabled }}

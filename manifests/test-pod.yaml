@@ -1,11 +1,11 @@
 apiVersion: v1
 kind: Pod
 metadata:
-  name: yolo11-test
+  name: pod-test
 spec:
   schedulerName: scheduler-plugins-scheduler
   containers:
-  - name: yolo11
+  - name: workload
     image: yolo11:latest
     resources:
       limits:

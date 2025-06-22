@@ -6,6 +6,7 @@ package bundlelocality
 import (
 	"context"
 	"fmt"
+	"math"
 	"strings"
 
 	v1 "k8s.io/api/core/v1"
@@ -42,7 +43,7 @@ func (bl *BundleLocality) Name() string {
 // Score invoked at the score extension point.
 func (bl *BundleLocality) Score(ctx context.Context, state *framework.CycleState, pod *v1.Pod, nodeName string) (int64, *framework.Status) {
 	// logger := bl.logger
-	klog.Background().Info("[Bundle Locality] Scoring Pods Start...")
+	klog.InfoS("[Bundle Locality] Scoring Pods Start...")
 	//logger.Info("{Bundle Locality} Scoring Pods Start...")
 	nodeInfos, err := bl.handle.SnapshotSharedLister().NodeInfos().List()
 	if err != nil {
@@ -56,13 +57,40 @@ func (bl *BundleLocality) Score(ctx context.Context, state *framework.CycleState
 	}
 	bundleScores := sumBundleScores(nodeInfo, pod, totalNumNodes)
 	score := calculatePriority(bundleScores, len(pod.Spec.InitContainers)+len(pod.Spec.Containers))
-	klog.Background().Info(fmt.Sprintf("{Bundle Locality} Scoring Pods End (score = %d)...", score))
+	klog.InfoS(fmt.Sprintf("[Bundle Locality] Scoring Pods End (score = %d)...", score))
 	//logger.Info(fmt.Sprintf("{Bundle Locality} Scoring Pods End (score = %d)...", score))
 	return score, nil
 }
 
 // ScoreExtensions of the Score plugin.
 func (bl *BundleLocality) ScoreExtensions() framework.ScoreExtensions {
+	return bl
+}
+
+func (bl *BundleLocality) NormalizeScore(ctx context.Context, state *framework.CycleState, pod *v1.Pod, scores framework.NodeScoreList) *framework.Status {
+	klog.InfoS("[Bundle Locality] Normalize Score Start...")
+	var highest int64 = -math.MaxInt64
+	var lowest int64 = math.MaxInt64
+	for _, nodeScore := range scores {
+		if nodeScore.Score > highest {
+			highest = nodeScore.Score
+		}
+		if nodeScore.Score < lowest {
+			lowest = nodeScore.Score
+		}
+	}
+
+	oldRange := highest - lowest
+	newRange := framework.MaxNodeScore - framework.MinNodeScore
+	for i, nodeScore := range scores {
+		if oldRange == 0 {
+			scores[i].Score = framework.MinNodeScore
+		} else {
+			scores[i].Score = ((nodeScore.Score - lowest) * newRange / oldRange) + framework.MinNodeScore
+		}
+	}
+
+	klog.InfoS("[Bundle Locality] Normalize Score End...")
 	return nil
 }
 
