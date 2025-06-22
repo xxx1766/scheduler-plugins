@@ -41,8 +41,9 @@ func (bl *BundleLocality) Name() string {
 
 // Score invoked at the score extension point.
 func (bl *BundleLocality) Score(ctx context.Context, state *framework.CycleState, pod *v1.Pod, nodeName string) (int64, *framework.Status) {
-	logger := bl.logger
-	logger.Info("{Bundle Locality} Scoring Pods Start...")
+	// logger := bl.logger
+	klog.Background().Info("[Bundle Locality] Scoring Pods Start...")
+	//logger.Info("{Bundle Locality} Scoring Pods Start...")
 	nodeInfos, err := bl.handle.SnapshotSharedLister().NodeInfos().List()
 	if err != nil {
 		return 0, framework.AsStatus(err)
@@ -55,8 +56,8 @@ func (bl *BundleLocality) Score(ctx context.Context, state *framework.CycleState
 	}
 	bundleScores := sumBundleScores(nodeInfo, pod, totalNumNodes)
 	score := calculatePriority(bundleScores, len(pod.Spec.InitContainers)+len(pod.Spec.Containers))
-
-	logger.Info(fmt.Sprintf("{Bundle Locality} Scoring Pods End (score = %d)...", score))
+	klog.Background().Info(fmt.Sprintf("{Bundle Locality} Scoring Pods End (score = %d)...", score))
+	//logger.Info(fmt.Sprintf("{Bundle Locality} Scoring Pods End (score = %d)...", score))
 	return score, nil
 }
 
@@ -67,6 +68,7 @@ func (bl *BundleLocality) ScoreExtensions() framework.ScoreExtensions {
 
 // New initializes a new plugin and returns it.
 func New(ctx context.Context, _ runtime.Object, h framework.Handle) (framework.Plugin, error) {
+	klog.Background().Info("[Bundle Locality] Registering...")
 	logger := klog.FromContext(ctx).WithValues("plugin", Name)
 	return &BundleLocality{logger: logger, handle: h}, nil
 }

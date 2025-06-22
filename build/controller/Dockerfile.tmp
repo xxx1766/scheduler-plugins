@@ -11,19 +11,20 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-ARG GO_BASE_IMAGE
+#ARG GO_BASE_IMAGE
 ARG DISTROLESS_BASE_IMAGE=gcr.io/distroless/static:nonroot
-FROM --platform=${BUILDPLATFORM} $GO_BASE_IMAGE AS builder
+#FROM --platform=${BUILDPLATFORM} $GO_BASE_IMAGE AS builder
 
-WORKDIR /workspace
-COPY . .
-ARG TARGETARCH
-RUN make build-controller GO_BUILD_ENV='CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH}'
+#WORKDIR /workspace
+#COPY . .
+#ARG TARGETARCH
+#RUN make build-controller GO_BUILD_ENV='CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH}'
 
-FROM --platform=${BUILDPLATFORM} $DISTROLESS_BASE_IMAGE
+FROM $DISTROLESS_BASE_IMAGE
 
 WORKDIR /bin
-COPY --from=builder /workspace/bin/controller .
+COPY ../../bin/controller .
+#COPY --from=builder /workspace/bin/controller .
 USER 65532:65532
 
 ENTRYPOINT ["/bin/controller"]
