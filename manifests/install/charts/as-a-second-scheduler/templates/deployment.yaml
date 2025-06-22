@@ -65,7 +65,6 @@ spec:
       containers:
       - command: {{- toYaml .Values.scheduler.command | nindent 8 }}
         args:
-        - --kubeconfig=/etc/kubernetes/admin.conf
         - --config=/etc/kubernetes/scheduler-config.yaml
         image: {{ .Values.scheduler.image }}
         imagePullPolicy: IfNotPresent
