@@ -9,6 +9,11 @@ import (
 	"math"
 	"strings"
 
+	"encoding/json"
+	"net/http"
+	"net/url"
+	"time"
+
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
@@ -19,9 +24,10 @@ import (
 // The two thresholds are used as bounds for the bundle score range. They correspond to a reasonable size range for
 // prefab bundles compressed and stored in registries; 90%ile of bundles on dockerhub drops into this range.
 const (
-	mb                    int64 = 1024 * 1024
-	minThreshold          int64 = 23 * mb
-	maxContainerThreshold int64 = 1000 * mb
+	mb                    int64  = 1024 * 1024
+	minThreshold          int64  = 23 * mb
+	maxContainerThreshold int64  = 1000 * mb
+	endPort               string = "9999"
 )
 
 // BundleLocality is a score plugin that favors nodes that already have requested pod container's bundles.
@@ -114,12 +120,72 @@ func calculatePriority(sumScores int64, numContainers int) int64 {
 	return framework.MaxNodeScore * (sumScores - minThreshold) / (maxThreshold - minThreshold)
 }
 
+type BundleInfo struct {
+	name    string
+	version string
+	size    float64 // in MiB
+}
+
+type BundleResp struct {
+	name   string
+	exists string
+}
+
+// getContainerBundles returns all bundles a container required.
+func getContainerBundles(cont v1.Container) []BundleInfo {
+	retList := []BundleInfo{}
+	return retList
+}
+
+func queryNodeIPSingleBundle(nodeAddress string, endPort string, bundleName string, bundleVersion string) bool {
+	klog.Infof("[Bundle Locality] Trying to query %s:%s...", nodeAddress, endPort)
+	baseURL := fmt.Sprintf("http://%s:%s/bundle", nodeAddress, endPort)
+
+	params := url.Values{}
+	params.Add("name", bundleName)
+	params.Add("version", bundleVersion)
+
+	fullURL := fmt.Sprintf("%s?%s", baseURL, params.Encode())
+
+	client := &http.Client{
+		Timeout: 500 * time.Millisecond,
+	}
+
+	resp, err := client.Get(fullURL)
+	if err != nil {
+		klog.Warningf("[Bundle Locality] Error querying node %s for bundle %s version %s: %v\n", nodeAddress, bundleName, bundleVersion, err)
+		return false
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		klog.Warningf("[Bundle Locality] Non-OK HTTP status: %v from node %s for bundle %s version %s\n", resp.StatusCode, nodeAddress, bundleName, bundleVersion)
+		return false
+	}
+
+	var bundleResp BundleResp
+	err = json.NewDecoder(resp.Body).Decode(&bundleResp)
+	if err != nil {
+		klog.Warningf("Failed to decode response from node %s for bundle %s version %s: %v\n", nodeAddress, bundleName, bundleVersion, err)
+		return false
+	}
+
+	return bundleResp.exists == "true"
+}
+
+func queryNodeBundles(nodeInfo *framework.NodeInfo, bundleinfo BundleInfo) bool {
+	return queryNodeIPSingleBundle(nodeInfo.Node().Status.Addresses[0].Address, endPort, bundleinfo.name, bundleinfo.version)
+}
+
 // sumBundleScores returns the sum of bundle scores of all the containers that are already on the node.
 // Each bundle receives a raw score of its size, scaled by scaledBundleScore. The raw scores are later used to calculate
 // the final score.
 func sumBundleScores(nodeInfo *framework.NodeInfo, pod *v1.Pod, totalNumNodes int) int64 {
 	var sum int64
-	for _, container := range pod.Spec.InitContainers {
+
+	allContainers := append(pod.Spec.InitContainers, pod.Spec.Containers...)
+
+	/* for _, container := range pod.Spec.InitContainers {
 		if state, ok := nodeInfo.ImageStates[normalizedBundleName(container.Image)]; ok {
 			sum += scaledBundleScore(state, totalNumNodes)
 		}
@@ -128,7 +194,20 @@ func sumBundleScores(nodeInfo *framework.NodeInfo, pod *v1.Pod, totalNumNodes in
 		if state, ok := nodeInfo.ImageStates[normalizedBundleName(container.Image)]; ok {
 			sum += scaledBundleScore(state, totalNumNodes)
 		}
+	} */
+
+	for _, container := range allContainers {
+		if state, ok := nodeInfo.ImageStates[normalizedBundleName(container.Image)]; ok {
+			sum += scaledBundleScore(state, totalNumNodes)
+		}
+
+		for _, eachBundle := range getContainerBundles(container) {
+			if ok := queryNodeBundles(nodeInfo, eachBundle); ok {
+				sum += int64(float64(eachBundle.size) * float64(1) / float64(totalNumNodes))
+			}
+		}
 	}
+
 	return sum
 }
 
