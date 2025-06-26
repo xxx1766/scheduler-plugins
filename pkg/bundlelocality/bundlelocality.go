@@ -27,7 +27,8 @@ const (
 	mb                    int64  = 1024 * 1024
 	minThreshold          int64  = 23 * mb
 	maxContainerThreshold int64  = 1000 * mb
-	endPort               string = "9999"
+	endPort               string = "9998"
+	upstramSvc            string = "https://prefab.cs.ac.cn"
 )
 
 // BundleLocality is a score plugin that favors nodes that already have requested pod container's bundles.
@@ -134,6 +135,9 @@ type BundleResp struct {
 // getContainerBundles returns all bundles a container required.
 func getContainerBundles(cont v1.Container) []BundleInfo {
 	retList := []BundleInfo{}
+        	
+	// upstreamSvc
+
 	return retList
 }
 
