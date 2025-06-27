@@ -28,7 +28,7 @@ const (
 	minThreshold          int64  = 23 * mb
 	maxContainerThreshold int64  = 1000 * mb
 	endPort               string = "9998"
-	upstramSvc            string = "https://prefab.cs.ac.cn"
+	upstramSvc            string = "https://prefab.cs.ac.cn:10062"
 )
 
 // BundleLocality is a score plugin that favors nodes that already have requested pod container's bundles.
@@ -104,6 +104,7 @@ func (bl *BundleLocality) NormalizeScore(ctx context.Context, state *framework.C
 // New initializes a new plugin and returns it.
 func New(ctx context.Context, _ runtime.Object, h framework.Handle) (framework.Plugin, error) {
 	klog.Background().Info("[Bundle Locality] Registering...")
+	initUpstreamClient()
 	logger := klog.FromContext(ctx).WithValues("plugin", Name)
 	return &BundleLocality{logger: logger, handle: h}, nil
 }
@@ -130,15 +131,6 @@ type BundleInfo struct {
 type BundleResp struct {
 	name   string
 	exists string
-}
-
-// getContainerBundles returns all bundles a container required.
-func getContainerBundles(cont v1.Container) []BundleInfo {
-	retList := []BundleInfo{}
-        	
-	// upstreamSvc
-
-	return retList
 }
 
 func queryNodeIPSingleBundle(nodeAddress string, endPort string, bundleName string, bundleVersion string) bool {
@@ -205,7 +197,7 @@ func sumBundleScores(nodeInfo *framework.NodeInfo, pod *v1.Pod, totalNumNodes in
 			sum += scaledBundleScore(state, totalNumNodes)
 		}
 
-		for _, eachBundle := range getContainerBundles(container) {
+		for _, eachBundle := range getContainerBundles(normalizedBundleName(container.Image)) {
 			if ok := queryNodeBundles(nodeInfo, eachBundle); ok {
 				sum += int64(float64(eachBundle.size) * float64(1) / float64(totalNumNodes))
 			}

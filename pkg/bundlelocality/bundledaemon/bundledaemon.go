@@ -1,17 +1,39 @@
 package main
 
 import (
-	"k8s.io/klog/v2"
+	"fmt"
 	"net"
 	"net/http"
 	"strconv"
+
+	"k8s.io/klog/v2"
+
+	"github.com/L-F-Z/TaskC/pkg/bundle"
 )
 
-const svcPort = "9998"
+const (
+	endPort    string = "9998"
+	upstramSvc string = "https://prefab.cs.ac.cn:10062"
+)
+
+var bm *bundle.BundleManager
 
 func queryLocalTaskC(nodeIP, bundleName, bundleVersion string) bool {
-	klog.Infof("Query Local TaskC IP: %v, Name: %v, Ver: %v, exists: true", nodeIP, bundleName, bundleVersion)
-	return true
+	klog.Infof("Query Local TaskC IP: %v, Name: %v, Ver: %v", nodeIP, bundleName, bundleVersion)
+	bundles := bm.ListNames()
+	if len(bundles) == 0 {
+		// klog.Warningf("[Bundle Daemon] nodeIP=%v, No Task Bundle Exists.", nodeIP)
+		return false
+	}
+
+	for _, b := range bundles { // "version" needs to be fixed...
+		if b == bundleName+" ("+bundleVersion+")" {
+			// klog.Infof("[Bundle Daemon] nodeIP=%v Found Bundle: %s", b, nodeIP)
+			return true
+		}
+	}
+
+	return false
 }
 
 func bundleHandler(w http.ResponseWriter, r *http.Request) {
@@ -38,11 +60,18 @@ func bundleHandler(w http.ResponseWriter, r *http.Request) {
 
 func main() {
 	klog.InitFlags(nil)
+	var err error
+
+	workDir := "/var/lib/taskc"
+	bm, err = bundle.NewBundleManager(workDir, upstramSvc)
+	if err != nil {
+		klog.Fatalf("[Bundle Daemon] Failed to create BundleManager: %v", err)
+	}
 
 	http.HandleFunc("/bundle", bundleHandler)
 
-	klog.Info(fmt.Sprintf("[Bundle Daemon] Starting HTTP Server on :%s", svcPort))
-	err := http.ListenAndServe(fmt.Sprintf(":%s", svcPort), nil)
+	klog.Info(fmt.Sprintf("[Bundle Daemon] Starting HTTP Server on :%s", endPort))
+	err = http.ListenAndServe(fmt.Sprintf(":%s", endPort), nil)
 	if err != nil {
 		klog.Fatalf("Failed to start server: %v", err)
 	}
