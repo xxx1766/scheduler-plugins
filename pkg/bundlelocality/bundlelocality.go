@@ -4,6 +4,7 @@
 package bundlelocality
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"math"
@@ -11,7 +12,6 @@ import (
 
 	"encoding/json"
 	"net/http"
-	"net/url"
 	"time"
 
 	v1 "k8s.io/api/core/v1"
@@ -35,6 +35,14 @@ const (
 type BundleLocality struct {
 	logger klog.Logger
 	handle framework.Handle
+}
+
+// refer to `TaskC/pkg/prefab/prefab.go` `type Prefab struct`
+type RemotePrefabInfo struct {
+	specType  string // e.g., "image", "package", etc.
+	name      string
+	specifier string
+	size      float64 // in MiB (currently 1.0, which is NOT my fault)
 }
 
 var _ framework.ScorePlugin = &BundleLocality{}
@@ -122,55 +130,62 @@ func calculatePriority(sumScores int64, numContainers int) int64 {
 	return framework.MaxNodeScore * (sumScores - minThreshold) / (maxThreshold - minThreshold)
 }
 
-type BundleInfo struct {
-	name    string
-	version string
-	size    float64 // in MiB
-}
+func QueryNodeBundles(nodeInfo *framework.NodeInfo, bundles []RemotePrefabInfo) float64 {
+	nodeAddress := nodeInfo.Node().Status.Addresses[0].Address
 
-type BundleResp struct {
-	name   string
-	exists string
-}
-
-func queryNodeIPSingleBundle(nodeAddress string, endPort string, bundleName string, bundleVersion string) bool {
 	klog.Infof("[Bundle Locality] Trying to query %s:%s...", nodeAddress, endPort)
-	baseURL := fmt.Sprintf("http://%s:%s/bundle", nodeAddress, endPort)
+	baseURL := fmt.Sprintf("http://%s:%s/bundles", nodeAddress, endPort)
 
-	params := url.Values{}
+	/* params := url.Values{}
 	params.Add("name", bundleName)
 	params.Add("version", bundleVersion)
+	fullURL := fmt.Sprintf("%s?%s", baseURL, params.Encode()) */
 
-	fullURL := fmt.Sprintf("%s?%s", baseURL, params.Encode())
+	sizes := .0
 
 	client := &http.Client{
 		Timeout: 500 * time.Millisecond,
 	}
 
-	resp, err := client.Get(fullURL)
+	payload, err := json.Marshal(bundles)
 	if err != nil {
-		klog.Warningf("[Bundle Locality] Error querying node %s for bundle %s version %s: %v\n", nodeAddress, bundleName, bundleVersion, err)
-		return false
+		klog.Errorf("[Bundle Locality] failed to marshal bundle info: %v", err)
+		return sizes
 	}
+
+	req, err := http.NewRequest("POST", baseURL, bytes.NewBuffer(payload))
+	if err != nil {
+		klog.Errorf("[Bundle Locality] failed to create request: %v", err)
+		return sizes
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := client.Do(req)
+
+	if err != nil {
+		klog.Warningf("[Bundle Locality] Error querying node %s: %v\n", nodeAddress, err)
+		return sizes
+	}
+
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		klog.Warningf("[Bundle Locality] Non-OK HTTP status: %v from node %s for bundle %s version %s\n", resp.StatusCode, nodeAddress, bundleName, bundleVersion)
-		return false
+		klog.Warningf("[Bundle Locality] Non-OK HTTP status: %v from node %s\n", resp.StatusCode, nodeAddress)
+		return sizes
 	}
 
-	var bundleResp BundleResp
-	err = json.NewDecoder(resp.Body).Decode(&bundleResp)
+	var response struct {
+		sizes float64 `json:"size"`
+	}
+
+	err = json.NewDecoder(resp.Body).Decode(&response)
 	if err != nil {
-		klog.Warningf("Failed to decode response from node %s for bundle %s version %s: %v\n", nodeAddress, bundleName, bundleVersion, err)
-		return false
+		klog.Warningf("[Bundle Locality] Failed to decode response from node %s: %v\n", nodeAddress, err)
+		return sizes
 	}
 
-	return bundleResp.exists == "true"
-}
-
-func queryNodeBundles(nodeInfo *framework.NodeInfo, bundleinfo BundleInfo) bool {
-	return queryNodeIPSingleBundle(nodeInfo.Node().Status.Addresses[0].Address, endPort, bundleinfo.name, bundleinfo.version)
+	return response.sizes
 }
 
 // sumBundleScores returns the sum of bundle scores of all the containers that are already on the node.
@@ -197,11 +212,14 @@ func sumBundleScores(nodeInfo *framework.NodeInfo, pod *v1.Pod, totalNumNodes in
 			sum += scaledBundleScore(state, totalNumNodes)
 		}
 
-		for _, eachBundle := range getContainerBundles(normalizedBundleName(container.Image)) {
+		/* for _, eachBundle := range getContainerBundles(normalizedBundleName(container.Image)) {
 			if ok := queryNodeBundles(nodeInfo, eachBundle); ok {
 				sum += int64(float64(eachBundle.size) * float64(1) / float64(totalNumNodes))
 			}
-		}
+		} */
+
+		sizes := QueryNodeBundles(nodeInfo, GetContainerBundles(normalizedBundleName(container.Image)))
+		sum += int64(float64(sizes) * float64(1) / float64(totalNumNodes))
 	}
 
 	return sum

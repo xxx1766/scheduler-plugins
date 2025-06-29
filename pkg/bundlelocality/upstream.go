@@ -43,9 +43,9 @@ func splitNormalizedBundleNameAndTag(normalizedName string) (name string, tag st
 	return name, tag
 }
 
-// getContainerBundles returns all bundles a container required.
-func getContainerBundles(nameTag string) []BundleInfo {
-	retList := []BundleInfo{}
+// GetContainerBundles returns all bundles a container required.
+func GetContainerBundles(nameTag string) []RemotePrefabInfo {
+	retList := []RemotePrefabInfo{}
 	name, tag := splitNormalizedBundleNameAndTag(nameTag)
 
 	bp, err := svcClient.RequestClosureBlueprint(name, tag)
@@ -56,11 +56,12 @@ func getContainerBundles(nameTag string) []BundleInfo {
 
 	for _, prefab := range bp.Depend {
 		for _, p := range prefab {
-			klog.Infof("[Bundle Locality] [Image=%s:%s] bundle: %s, version: %s, size: 0", name, tag, p.Name, p.Specifier)
-			bundleInfo := BundleInfo{
-				name:    p.Name,
-				version: p.Specifier,
-				size:    0, // Size is not used in this context
+			// klog.Infof("[Bundle Locality] [Image=%s:%s] bundle: %s, version: %s, size: 0", name, tag, p.Name, p.Specifier)
+			bundleInfo := RemotePrefabInfo{
+				specType:  p.SpecType, // e.g., "image", "package", etc.
+				name:      p.Name,
+				specifier: p.Specifier,
+				size:      1., // Size is not used in this context
 			}
 			retList = append(retList, bundleInfo)
 		}
