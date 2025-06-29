@@ -22,10 +22,10 @@ var bm *bundle.BundleManager
 
 // refer to `TaskC/pkg/prefab/prefab.go` `type Prefab struct`
 type RemotePrefabInfo struct {
-	specType  string // e.g., "image", "package", etc.
-	name      string
-	specifier string
-	size      float64 // in MiB (currently 1.0, which is NOT my fault)
+	SpecType  string  `json:"spectype"` // e.g., "image", "package", etc.
+	Name      string  `json:"name"`
+	Specifier string  `json:"specifier"` // e.g., "v1.0.0", "latest", etc.
+	Size      float64 `json:"size"`      // in MiB
 }
 
 type LocalBundleInfo struct {
@@ -47,7 +47,7 @@ func VersionMatch(specType string, name string, specifier string, version string
 }
 
 func CompareAndCalculate(nodeIP string, l map[string][]LocalBundleInfo, r []RemotePrefabInfo) float64 {
-	klog.Infof("Query Local TaskC IP: %v", nodeIP)
+	// klog.Infof("Query Local TaskC IP: %v", nodeIP)
 	sizes := 0.0
 
 	if len(r) == 0 {
@@ -55,17 +55,20 @@ func CompareAndCalculate(nodeIP string, l map[string][]LocalBundleInfo, r []Remo
 		return 0.0
 	}
 
+	thisBundleSize := 0.0
+
 	for _, b := range r { // compare a remote prefab with local bundles
-		b_specT, b_name, b_ver := b.specType, b.name, b.specifier
+		thisBundleSize = 0.0
+
+		b_specT, b_name, b_ver := b.SpecType, b.Name, b.Specifier
+		// klog.Infof("[Bundle Daemon] nodeIP=%v, Checking Remote Bundle: [%v]{%v}:(%v)", nodeIP, b_specT, b_name, b_ver)
 
 		v, ok := l[b_name]
 
 		if !ok {
-			klog.Infof("[Bundle Daemon] nodeIP=%v, No Local Bundle Found for [%s]%s:%s", nodeIP, b_specT, b_name, b_ver)
+			// klog.Infof("[Bundle Daemon] nodeIP=%v, No Local Bundle Found for [%s]%s:%s", nodeIP, b_specT, b_name, b_ver)
 			continue
 		}
-
-		thisBundleSize := 1.0
 
 		for _, localBundle := range v {
 			// klog.Infof("[Bundle Daemon] nodeIP=%v, Found Local Bundle: %s (%s), size: %.2f MiB", nodeIP, localBundle.name, localBundle.version, localBundle.size)
@@ -102,12 +105,13 @@ func ListLocalBundles() map[string][]LocalBundleInfo {
 
 		name := strings.TrimSpace(nameVersion[:lastOpen])
 		version := strings.TrimSpace(nameVersion[lastOpen+1 : lastClose])
-		// fmt.Printf("[Bundle Daemon] Found Local Bundle: %s (%s)\n", name, version)
+
+		// klog.Infof("[Bundle Daemon] Found Local Bundle: %s (%s)\n", name, version)
 
 		localBundleDict[name] = append(localBundleDict[name], LocalBundleInfo{
 			name:    name,
 			version: version,
-			size:    1., // in MiB (currently 1.0, which is NOT my fault)
+			size:    1., // in MiB (currently 1.0, to be fixed by other developers)
 		})
 	}
 
@@ -140,6 +144,10 @@ func bundleHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "[Bundle Daemon] invalid JSON payload", http.StatusBadRequest)
 		return
 	}
+
+	/* for _, b := range remotePrefabs {
+		klog.Infof("[Bundle Daemon] Remote Bundle: %s, Type: %s, Version: %s, Size: %.2f MiB", b.Name, b.SpecType, b.Specifier, b.Size)
+	} */
 
 	sizes := CompareAndCalculate(nodeIP, ListLocalBundles(), remotePrefabs)
 	var response struct {
