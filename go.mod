@@ -189,4 +189,4 @@ replace k8s.io/sample-cli-plugin => k8s.io/sample-cli-plugin v0.32.5
 
 replace k8s.io/sample-controller => k8s.io/sample-controller v0.32.5
 
-replace github.com/L-F-Z/TaskC => ../../../../TaskC
+replace github.com/L-F-Z/TaskC => ./TaskC

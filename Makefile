@@ -13,7 +13,7 @@
 # limitations under the License.
 
 #GO_VERSION := $(awk '/^go /{print $$2}' go.mod|head -n1)
-GO_VERSION := 1.23.0
+GO_VERSION := 1.24.0
 INTEGTESTENVVAR=SCHED_PLUGINS_TEST_VERBOSE=1
 
 # Manage platform and builders
