@@ -8,6 +8,18 @@ func init() {
 	initUpstreamClient()
 }
 
+func TestNameSplitter(t *testing.T) {
+	name, tag := splitNormalizedBundleNameAndTag("yolo11:latest")
+	if name != "yolo11" || tag != "latest" {
+		t.Errorf("Expected 'yolo11' and 'latest', got '%s' and '%s'", name, tag)
+	}
+
+	name, tag = splitNormalizedBundleNameAndTag("yolo11")
+	if name != "yolo11" || tag != "latest" {
+		t.Errorf("Expected 'yolo11' and 'latest', got '%s' and '%s'", name, tag)
+	}
+}
+
 func TestContBund(t *testing.T) {
 	bundInfo := GetContainerBundles("yolo11:latest")
 
@@ -21,6 +33,6 @@ func TestContBund(t *testing.T) {
 	// Bundle: psutil, Version: any, Size: 0
 
 	for _, b := range bundInfo {
-		t.Logf("Bundle: %s, Specifier: %s, Size: %v", b.name, b.specifier, b.size)
+		t.Logf("Bundle: %s, Specifier: %s, Size: %v", b.Name, b.Specifier, b.Size)
 	}
 }

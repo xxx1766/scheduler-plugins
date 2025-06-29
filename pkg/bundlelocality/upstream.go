@@ -58,10 +58,10 @@ func GetContainerBundles(nameTag string) []RemotePrefabInfo {
 		for _, p := range prefab {
 			// klog.Infof("[Bundle Locality] [Image=%s:%s] bundle: %s, version: %s, size: 0", name, tag, p.Name, p.Specifier)
 			bundleInfo := RemotePrefabInfo{
-				specType:  p.SpecType, // e.g., "image", "package", etc.
-				name:      p.Name,
-				specifier: p.Specifier,
-				size:      1., // Size is not used in this context
+				SpecType:  p.SpecType, // e.g., "image", "package", etc.
+				Name:      p.Name,
+				Specifier: p.Specifier,
+				Size:      1., // Size is not used in this context
 			}
 			retList = append(retList, bundleInfo)
 		}

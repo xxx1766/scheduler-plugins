@@ -31,18 +31,18 @@ const (
 	upstramSvc            string = "https://prefab.cs.ac.cn:10062"
 )
 
+// refer to `TaskC/pkg/prefab/prefab.go` `type Prefab struct`
+type RemotePrefabInfo struct {
+	SpecType  string  `json:"spectype"` // e.g., "image", "package", etc.
+	Name      string  `json:"name"`
+	Specifier string  `json:"specifier"` // e.g., "v1.0.0", "latest", etc.
+	Size      float64 `json:"size"`      // in MiB
+}
+
 // BundleLocality is a score plugin that favors nodes that already have requested pod container's bundles.
 type BundleLocality struct {
 	logger klog.Logger
 	handle framework.Handle
-}
-
-// refer to `TaskC/pkg/prefab/prefab.go` `type Prefab struct`
-type RemotePrefabInfo struct {
-	specType  string // e.g., "image", "package", etc.
-	name      string
-	specifier string
-	size      float64 // in MiB (currently 1.0, which is NOT my fault)
 }
 
 var _ framework.ScorePlugin = &BundleLocality{}
@@ -58,7 +58,7 @@ func (bl *BundleLocality) Name() string {
 // Score invoked at the score extension point.
 func (bl *BundleLocality) Score(ctx context.Context, state *framework.CycleState, pod *v1.Pod, nodeName string) (int64, *framework.Status) {
 	// logger := bl.logger
-	klog.InfoS("[Bundle Locality] Scoring Pods Start...")
+	// klog.InfoS("[Bundle Locality] Scoring Pods Start...")
 	//logger.Info("{Bundle Locality} Scoring Pods Start...")
 	nodeInfos, err := bl.handle.SnapshotSharedLister().NodeInfos().List()
 	if err != nil {
@@ -130,10 +130,41 @@ func calculatePriority(sumScores int64, numContainers int) int64 {
 	return framework.MaxNodeScore * (sumScores - minThreshold) / (maxThreshold - minThreshold)
 }
 
-func QueryNodeBundles(nodeInfo *framework.NodeInfo, bundles []RemotePrefabInfo) float64 {
-	nodeAddress := nodeInfo.Node().Status.Addresses[0].Address
+func QueryNodeBundlesWrapper(nodeInfo *framework.NodeInfo, bundles []RemotePrefabInfo) float64 {
+	var nodeAddresses []v1.NodeAddress = nodeInfo.Node().Status.Addresses
 
-	klog.Infof("[Bundle Locality] Trying to query %s:%s...", nodeAddress, endPort)
+	// Samples:
+	/* []v1.NodeAddress{
+		{Type: v1.NodeInternalIP, Address: "127.0.0.1"},
+		{Type: v1.NodeInternalIP, Address: "127.0.0.2"},
+		{Type: v1.NodeInternalIP, Address: "127.0.0.3"},
+		{Type: v1.NodeHostName, Address: "MyHostName"},
+	} */
+
+	for _, address := range nodeAddresses {
+		if address.Type == v1.NodeInternalIP {
+			nodeAddress := address.Address
+			klog.Infof("[Bundle Locality] Querying node %s for bundles...", nodeAddress)
+			return QueryNodeBundles(nodeAddress, bundles)
+		}
+	}
+
+	// should not happen in test cases, but just in case
+	for _, address := range nodeAddresses {
+		if address.Type == v1.NodeExternalIP {
+			nodeAddress := address.Address
+			klog.Infof("[Bundle Locality] Querying node %s for bundles...", nodeAddress)
+			return QueryNodeBundles(nodeAddress, bundles)
+		}
+	}
+
+	// If no suitable node address is found, log a warning and return 0
+	klog.Warning("[Bundle Locality] No suitable node address found for querying bundles.")
+	return .0 // Return 0 if no suitable node address is found
+}
+
+func QueryNodeBundles(nodeAddress string, bundles []RemotePrefabInfo) float64 {
+	klog.Infof("[Bundle Locality] Trying to query http://%s:%s/bundles", nodeAddress, endPort)
 	baseURL := fmt.Sprintf("http://%s:%s/bundles", nodeAddress, endPort)
 
 	/* params := url.Values{}
@@ -146,6 +177,10 @@ func QueryNodeBundles(nodeInfo *framework.NodeInfo, bundles []RemotePrefabInfo) 
 	client := &http.Client{
 		Timeout: 500 * time.Millisecond,
 	}
+
+	/* for _, b := range bundles {
+		klog.Infof("[Bundle Locality] [Before JSON Marshal] Remote Bundle: %s, Type: %s, Version: %s, Size: %.2f MiB", b.Name, b.SpecType, b.Specifier, b.Size)
+	} */
 
 	payload, err := json.Marshal(bundles)
 	if err != nil {
@@ -176,7 +211,7 @@ func QueryNodeBundles(nodeInfo *framework.NodeInfo, bundles []RemotePrefabInfo) 
 	}
 
 	var response struct {
-		sizes float64 `json:"size"`
+		sizes float64
 	}
 
 	err = json.NewDecoder(resp.Body).Decode(&response)
@@ -184,6 +219,8 @@ func QueryNodeBundles(nodeInfo *framework.NodeInfo, bundles []RemotePrefabInfo) 
 		klog.Warningf("[Bundle Locality] Failed to decode response from node %s: %v\n", nodeAddress, err)
 		return sizes
 	}
+
+	klog.Infof("[Bundle Locality] Received sizes: %f from node %s", response.sizes, nodeAddress)
 
 	return response.sizes
 }
@@ -218,7 +255,7 @@ func sumBundleScores(nodeInfo *framework.NodeInfo, pod *v1.Pod, totalNumNodes in
 			}
 		} */
 
-		sizes := QueryNodeBundles(nodeInfo, GetContainerBundles(normalizedBundleName(container.Image)))
+		sizes := QueryNodeBundlesWrapper(nodeInfo, GetContainerBundles(normalizedBundleName(container.Image)))
 		sum += int64(float64(sizes) * float64(1) / float64(totalNumNodes))
 	}
 
