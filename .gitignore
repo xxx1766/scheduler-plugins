@@ -1,4 +1,5 @@
 bundledaemon
+/TaskC/
 
 # build and test outputs
 /bin/
