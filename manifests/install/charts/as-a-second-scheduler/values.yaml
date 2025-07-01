@@ -5,7 +5,7 @@
 scheduler:
   name: scheduler-plugins-scheduler
   #image: registry.k8s.io/scheduler-plugins/kube-scheduler:v0.31.8
-  image: staging/kube-scheduler:v06291653
+  image: staging/kube-scheduler:v07011752
   command:
   - /bin/kube-scheduler
   replicaCount: 1

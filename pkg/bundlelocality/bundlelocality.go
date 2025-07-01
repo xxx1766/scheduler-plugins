@@ -226,7 +226,7 @@ func QueryNodeBundles(nodeAddress string, bundles []RemotePrefabInfo) float64 {
 }
 
 // sumBundleScores returns the sum of bundle scores of all the containers that are already on the node.
-// Each bundle receives a raw score of its size, scaled by scaledBundleScore. The raw scores are later used to calculate
+// Each bundle receives a raw score of its size, scaled by scaledImageScore. The raw scores are later used to calculate
 // the final score.
 func sumBundleScores(nodeInfo *framework.NodeInfo, pod *v1.Pod, totalNumNodes int) int64 {
 	var sum int64
@@ -235,18 +235,19 @@ func sumBundleScores(nodeInfo *framework.NodeInfo, pod *v1.Pod, totalNumNodes in
 
 	/* for _, container := range pod.Spec.InitContainers {
 		if state, ok := nodeInfo.ImageStates[normalizedBundleName(container.Image)]; ok {
-			sum += scaledBundleScore(state, totalNumNodes)
+			sum += scaledImageScore(state, totalNumNodes)
 		}
 	}
 	for _, container := range pod.Spec.Containers {
 		if state, ok := nodeInfo.ImageStates[normalizedBundleName(container.Image)]; ok {
-			sum += scaledBundleScore(state, totalNumNodes)
+			sum += scaledImageScore(state, totalNumNodes)
 		}
 	} */
 
 	for _, container := range allContainers {
-		if state, ok := nodeInfo.ImageStates[normalizedBundleName(container.Image)]; ok {
-			sum += scaledBundleScore(state, totalNumNodes)
+		if state, ok := nodeInfo.ImageStates[normalizedBundleName(container.Image)]; ok {	
+			sum += scaledImageScore(state, totalNumNodes)
+			// klog.Infof("[Bundle Locality] [ImgCmp] sum += %v\n", sum)
 		}
 
 		/* for _, eachBundle := range getContainerBundles(normalizedBundleName(container.Image)) {
@@ -256,19 +257,22 @@ func sumBundleScores(nodeInfo *framework.NodeInfo, pod *v1.Pod, totalNumNodes in
 		} */
 
 		sizes := QueryNodeBundlesWrapper(nodeInfo, GetContainerBundles(normalizedBundleName(container.Image)))
+		// klog.Infof("[Bundle Locality] [PakCmp Before] sizes=%v, totalNumNodes=%v, sum+=%v\n", sizes, float64(totalNumNodes), sum)
 		sum += int64(float64(sizes) * float64(1) / float64(totalNumNodes))
+		// klog.Infof("[Bundle Locality] [PakCmp After] sizes=%v, totalNumNodes=%v, sum+=%v\n", sizes, float64(totalNumNodes), sum)
 	}
 
 	return sum
 }
 
-// scaledBundleScore returns an adaptively scaled score for the given state of a bundle.
-// The size of the bundle is used as the base score, scaled by a factor which considers how much nodes the bundle has "spread" to.
+// scaledImageScore returns an adaptively scaled score for the given state of an image.
+// The size of the image is used as the base score, scaled by a factor which considers how much nodes the image has "spread" to.
 // This heuristic aims to mitigate the undesirable "node heating problem", i.e., pods get assigned to the same or
-// a few nodes due to bundle locality.
-func scaledBundleScore(bundleState *framework.ImageStateSummary, totalNumNodes int) int64 {
-	spread := float64(bundleState.NumNodes) / float64(totalNumNodes)
-	return int64(float64(bundleState.Size) * spread)
+// a few nodes due to image locality.
+func scaledImageScore(imageState *framework.ImageStateSummary, totalNumNodes int) int64 {
+	spread := float64(imageState.NumNodes) / float64(totalNumNodes)
+	klog.Infof("[Bundle Locality] [scaledImageScore] float64(imageState.NumNodes)=%v, float64(totalNumNodes)=%v, float64(imageState.Size)=%v\n", float64(imageState.NumNodes), float64(totalNumNodes), float64(imageState.Size))
+	return int64(1. /*float64(imageState.Size)*/ * spread) // need to be fixed by other developers
 }
 
 // normalizedBundleName returns the CRI compliant name for a given bundle.
