@@ -19,7 +19,7 @@ data:
         score:
           enabled:
           - name: 'BundleLocality'
-            weight: 5
+            weight: 2
         multiPoint:
           enabled:
           {{- range $.Values.plugins.enabled }}
