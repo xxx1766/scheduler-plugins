@@ -7,7 +7,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"math"
+	// "math"
 	"strings"
 
 	"encoding/json"
@@ -25,8 +25,8 @@ import (
 // prefab bundles compressed and stored in registries; 90%ile of bundles on dockerhub drops into this range.
 const (
 	mb                    int64  = 1024 * 1024
-	minThreshold          int64  = 23 * mb
-	maxContainerThreshold int64  = 1000 * mb
+	minThreshold          int64  = 23 * mb   // 24117248
+	maxContainerThreshold int64  = 1000 * mb // 1048576000
 	endPort               string = "9998"
 	upstramSvc            string = "https://prefab.cs.ac.cn:10062"
 )
@@ -79,10 +79,10 @@ func (bl *BundleLocality) Score(ctx context.Context, state *framework.CycleState
 
 // ScoreExtensions of the Score plugin.
 func (bl *BundleLocality) ScoreExtensions() framework.ScoreExtensions {
-	return bl
+	return nil // bl
 }
 
-func (bl *BundleLocality) NormalizeScore(ctx context.Context, state *framework.CycleState, pod *v1.Pod, scores framework.NodeScoreList) *framework.Status {
+/* func (bl *BundleLocality) NormalizeScore(ctx context.Context, state *framework.CycleState, pod *v1.Pod, scores framework.NodeScoreList) *framework.Status {
 	// klog.InfoS("[Bundle Locality] Normalize Score Start...")
 	var highest int64 = -math.MaxInt64
 	var lowest int64 = math.MaxInt64
@@ -107,7 +107,7 @@ func (bl *BundleLocality) NormalizeScore(ctx context.Context, state *framework.C
 
 	klog.InfoS("[Bundle Locality] Normalize Score End...")
 	return nil
-}
+} */
 
 // New initializes a new plugin and returns it.
 func New(ctx context.Context, _ runtime.Object, h framework.Handle) (framework.Plugin, error) {
@@ -229,7 +229,7 @@ func QueryNodeBundles(nodeAddress string, bundles []RemotePrefabInfo) float64 {
 // Each bundle receives a raw score of its size, scaled by scaledImageScore. The raw scores are later used to calculate
 // the final score.
 func sumBundleScores(nodeInfo *framework.NodeInfo, pod *v1.Pod, totalNumNodes int) int64 {
-	var sum int64
+	var sum int64 = 0
 
 	allContainers := append(pod.Spec.InitContainers, pod.Spec.Containers...)
 
@@ -245,15 +245,19 @@ func sumBundleScores(nodeInfo *framework.NodeInfo, pod *v1.Pod, totalNumNodes in
 	} */
 
 	for _, container := range allContainers {
-		if state, ok := nodeInfo.ImageStates[normalizedBundleName(container.Image)]; ok {
+		/* if state, ok := nodeInfo.ImageStates[normalizedBundleName(container.Image)]; ok {
 			sum += scaledImageScore(state, totalNumNodes)
 			klog.Infof("[Bundle Locality] [ImgCmp] sum += %v\n", sum)
-		}
+		} */ // currently, image size is broken, to be fixed by other developers
 
 		sizes := QueryNodeBundlesWrapper(nodeInfo, GetContainerBundles(normalizedBundleName(container.Image)))
 		// klog.Infof("[Bundle Locality] [PakCmp Before] sizes=%v, totalNumNodes=%v, sum+=%v\n", sizes, float64(totalNumNodes), sum)
-		sum += int64(float64(sizes) / (float64(totalNumNodes) * float64(len(nodeInfo.Pods) /*# of Pods on the Node*/ +1)))
-		// klog.Infof("[Bundle Locality] [PakCmp After] sizes=%v, totalNumNodes=%v, sum+=%v\n", sizes, float64(totalNumNodes), sum)
+
+		scalingFactor := (len(nodeInfo.Pods) + 1) * (len(nodeInfo.Pods) + 1) // TODO: use totalNumNodes in some way
+
+		sum += int64(float64(sizes) / float64(scalingFactor))
+
+		klog.Infof("[Bundle Locality] [rawScore] size(before scaling)=%v, len(nodeInfo.Pods)=%v, totalNumNodes=%v\n", sizes, len(nodeInfo.Pods), float64(totalNumNodes))
 	}
 
 	return sum
