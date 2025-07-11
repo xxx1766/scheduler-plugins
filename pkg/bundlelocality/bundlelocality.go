@@ -83,7 +83,7 @@ func (bl *BundleLocality) ScoreExtensions() framework.ScoreExtensions {
 }
 
 func (bl *BundleLocality) NormalizeScore(ctx context.Context, state *framework.CycleState, pod *v1.Pod, scores framework.NodeScoreList) *framework.Status {
-	klog.InfoS("[Bundle Locality] Normalize Score Start...")
+	// klog.InfoS("[Bundle Locality] Normalize Score Start...")
 	var highest int64 = -math.MaxInt64
 	var lowest int64 = math.MaxInt64
 	for _, nodeScore := range scores {
@@ -153,7 +153,7 @@ func QueryNodeBundlesWrapper(nodeInfo *framework.NodeInfo, bundles []RemotePrefa
 	for _, address := range nodeAddresses {
 		if address.Type == v1.NodeExternalIP {
 			nodeAddress := address.Address
-			klog.Infof("[Bundle Locality] Querying node %s for bundles...", nodeAddress)
+			// klog.Infof("[Bundle Locality] Querying node %s for bundles...", nodeAddress)
 			return QueryNodeBundles(nodeAddress, bundles)
 		}
 	}
