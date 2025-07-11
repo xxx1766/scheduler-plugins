@@ -1,6 +1,7 @@
 package main
 
 import (
+	"github.com/L-F-Z/TaskC/pkg/bundle"
 	"testing"
 )
 
@@ -11,6 +12,50 @@ const REPO_HUGGINGFACE = "HuggingFace"
 const REPO_PREFAB = "Prefab"
 const REPO_CLOSURE = "Closure"
 const REPO_K8S = "k8s"
+
+func TestGetSizes(t *testing.T) {
+	// Test 1
+	size, err := GetLocalFileSize("001d28b8-076b-4c0b-9a95-ecedf425d148")
+	if err != nil {
+		t.Errorf("Failed to get remote file size: %v", err)
+		return
+	}
+	if size <= 0 {
+		t.Errorf("Expected size to be greater than 0, got %d", size)
+		return
+	}
+	t.Logf("Remote file size: %d bytes", size) // 395738
+
+	// Test 2
+	size, err = GetLocalFileSize("0")
+	if err == nil {
+		t.Errorf("Expected error for invalid ID, got size %d", size)
+		return
+	}
+	t.Logf("Expected error for invalid ID: %v", err)
+}
+
+func TestGetID(t *testing.T) {
+	bm, _ := bundle.NewBundleManager(workDir, upstramSvc)
+
+	id, eixsts := bm.GetBundleID("yolo11", "latest")
+	if !eixsts {
+		t.Errorf("Expected bundle yolo11:latest to exist, but it does not")
+		return
+	}
+	if id == "" {
+		t.Errorf("Expected non-empty ID for bundle yolo11:latest, got empty string")
+		return
+	}
+	t.Logf("Bundle ID for yolo11:latest is %s", id) // e3831e62-37ef-4a6c-a686-fe69fa3bdf0c
+
+	_, eixsts = bm.GetBundleID("nonexistent", "latest")
+	if eixsts {
+		t.Errorf("Expected bundle nonexistent:latest to not exist, but it does")
+		return
+	}
+	t.Logf("Bundle nonexistent:latest does not exist as expected")
+}
 
 func TestVerMatch(t *testing.T) {
 	if !VersionMatch(REPO_PYPI, "numpy", ">=1.23.0", "1.23.5") {

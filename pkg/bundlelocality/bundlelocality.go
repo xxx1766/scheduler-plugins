@@ -245,20 +245,14 @@ func sumBundleScores(nodeInfo *framework.NodeInfo, pod *v1.Pod, totalNumNodes in
 	} */
 
 	for _, container := range allContainers {
-		if state, ok := nodeInfo.ImageStates[normalizedBundleName(container.Image)]; ok {	
+		if state, ok := nodeInfo.ImageStates[normalizedBundleName(container.Image)]; ok {
 			sum += scaledImageScore(state, totalNumNodes)
-			// klog.Infof("[Bundle Locality] [ImgCmp] sum += %v\n", sum)
+			klog.Infof("[Bundle Locality] [ImgCmp] sum += %v\n", sum)
 		}
-
-		/* for _, eachBundle := range getContainerBundles(normalizedBundleName(container.Image)) {
-			if ok := queryNodeBundles(nodeInfo, eachBundle); ok {
-				sum += int64(float64(eachBundle.size) * float64(1) / float64(totalNumNodes))
-			}
-		} */
 
 		sizes := QueryNodeBundlesWrapper(nodeInfo, GetContainerBundles(normalizedBundleName(container.Image)))
 		// klog.Infof("[Bundle Locality] [PakCmp Before] sizes=%v, totalNumNodes=%v, sum+=%v\n", sizes, float64(totalNumNodes), sum)
-		sum += int64(float64(sizes) * float64(1) / float64(totalNumNodes))
+		sum += int64(float64(sizes) / (float64(totalNumNodes) * float64(len(nodeInfo.Pods) /*# of Pods on the Node*/ +1)))
 		// klog.Infof("[Bundle Locality] [PakCmp After] sizes=%v, totalNumNodes=%v, sum+=%v\n", sizes, float64(totalNumNodes), sum)
 	}
 
@@ -271,8 +265,8 @@ func sumBundleScores(nodeInfo *framework.NodeInfo, pod *v1.Pod, totalNumNodes in
 // a few nodes due to image locality.
 func scaledImageScore(imageState *framework.ImageStateSummary, totalNumNodes int) int64 {
 	spread := float64(imageState.NumNodes) / float64(totalNumNodes)
-	klog.Infof("[Bundle Locality] [scaledImageScore] float64(imageState.NumNodes)=%v, float64(totalNumNodes)=%v, float64(imageState.Size)=%v\n", float64(imageState.NumNodes), float64(totalNumNodes), float64(imageState.Size))
-	return int64(1. /*float64(imageState.Size)*/ * spread) // need to be fixed by other developers
+	// klog.Infof("[Bundle Locality] [scaledImageScore] float64(imageState.NumNodes)=%v, float64(totalNumNodes)=%v, float64(imageState.Size)=%v\n", float64(imageState.NumNodes), float64(totalNumNodes), float64(imageState.Size))
+	return int64(10.0 /*float64(imageState.Size)*/ * spread) // need to be fixed by other developers
 }
 
 // normalizedBundleName returns the CRI compliant name for a given bundle.

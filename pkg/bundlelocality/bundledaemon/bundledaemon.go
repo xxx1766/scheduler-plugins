@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"k8s.io/klog/v2"
@@ -16,6 +17,7 @@ import (
 const (
 	endPort    string = "9998"
 	upstramSvc string = "https://prefab.cs.ac.cn:10062"
+	workDir    string = "/var/lib/taskc"
 )
 
 var bm *bundle.BundleManager
@@ -29,6 +31,7 @@ type RemotePrefabInfo struct {
 }
 
 type LocalBundleInfo struct {
+	id      string
 	name    string
 	version string
 	size    float64 // in MiB
@@ -44,6 +47,39 @@ func VersionMatch(specType string, name string, specifier string, version string
 	}
 
 	return decodedSpecifier.Contains(parsedVersion)
+}
+
+func GetLocalFileSize(id string) (int64, error) {
+	url := fmt.Sprintf("%s/file?id=%s", upstramSvc, id)
+
+	client := &http.Client{}
+
+	req, err := http.NewRequest("HEAD", url, nil)
+	if err != nil {
+		return 0, err
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return 0, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return 0, fmt.Errorf("status Code %d", resp.StatusCode)
+	}
+
+	lengthStr := resp.Header.Get("Content-Length")
+	if lengthStr == "" {
+		return 0, fmt.Errorf("content-Length Not Found")
+	}
+
+	contentLength, err := strconv.ParseInt(lengthStr, 10, 64)
+	if err != nil {
+		return 0, err
+	}
+
+	return contentLength, nil
 }
 
 func CompareAndCalculate(nodeIP string, l map[string][]LocalBundleInfo, r []RemotePrefabInfo) float64 {
@@ -108,11 +144,20 @@ func ListLocalBundles() map[string][]LocalBundleInfo {
 
 		// klog.Infof("[Bundle Daemon] Found Local Bundle: %s (%s)\n", name, version)
 
-		localBundleDict[name] = append(localBundleDict[name], LocalBundleInfo{
-			name:    name,
-			version: version,
-			size:    1., // in MiB (currently 1.0, to be fixed by other developers)
-		})
+		id, exists := bm.GetBundleID(name, version) // ensure the bundle exists in the BundleManager
+
+		if exists {
+			size, err := GetLocalFileSize(id)
+			if err != nil {
+				size = 1 // default size if the file size cannot be determined
+			}
+			localBundleDict[name] = append(localBundleDict[name], LocalBundleInfo{
+				id:      id, // id is not used in this context, can be set later if needed
+				name:    name,
+				version: version,
+				size:    float64(size), // in MiB
+			})
+		}
 	}
 
 	return localBundleDict
@@ -169,7 +214,6 @@ func main() {
 	klog.InitFlags(nil)
 	var err error
 
-	workDir := "/var/lib/taskc"
 	bm, err = bundle.NewBundleManager(workDir, upstramSvc)
 	if err != nil {
 		klog.Fatalf("[Bundle Daemon] Failed to create BundleManager: %v", err)
