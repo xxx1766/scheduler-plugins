@@ -16,6 +16,7 @@ const REPO_K8S = "k8s"
 func TestGetSizes(t *testing.T) {
 	// Test 1
 	size, err := GetLocalFileSize("001d28b8-076b-4c0b-9a95-ecedf425d148")
+	// size, err := GetLocalFileSize("dd6b348a-b185-4ff2-9457-b668cbadb0d6")
 	if err != nil {
 		t.Errorf("Failed to get remote file size: %v", err)
 		return
@@ -55,6 +56,17 @@ func TestGetID(t *testing.T) {
 		return
 	}
 	t.Logf("Bundle nonexistent:latest does not exist as expected")
+
+	id, eixsts = bm.GetBundleID("registry.k8s.io/kube-scheduler", "v1.32.6")
+	if !eixsts {
+		t.Errorf("Expected bundle to exist, but it does not")
+		return
+	}
+	if id == "" {
+		t.Errorf("Expected non-empty ID for bundle, got empty string")
+		return
+	}
+	t.Logf("Bundle ID for the bundle is %s", id) // e3831e62-37ef-4a6c-a686-fe69fa3bdf0c
 }
 
 func TestVerMatch(t *testing.T) {
