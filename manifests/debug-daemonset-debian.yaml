@@ -1,0 +1,20 @@
+# --pod-network-cidr=10.85.0.0/16
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: debian-trixie-daemonset
+  namespace: default
+spec:
+  selector:
+    matchLabels:
+      app: debian-trixie
+  template:
+    metadata:
+      labels:
+        app: debian-trixie
+    spec:
+      containers:
+      - name: debian-container
+        image: debian:trixie-slim
+        command: ["/bin/bash", "-c", "tail -f /dev/null"]
+        imagePullPolicy: IfNotPresent
