@@ -7,6 +7,8 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"math"
+
 	// "math"
 	"strings"
 
@@ -25,8 +27,8 @@ import (
 // prefab bundles compressed and stored in registries; 90%ile of bundles on dockerhub drops into this range.
 const (
 	mb                    int64  = 1024 * 1024
-	minThreshold          int64  = 23 * mb   // 24117248
-	maxContainerThreshold int64  = 1000 * mb // 1048576000
+	minThreshold          int64  = 10 * mb  // 23 * mb   // 24117248
+	maxContainerThreshold int64  = 150 * mb // 1000 * mb // 1048576000
 	endPort               string = "9998"
 	upstramSvc            string = "https://prefab.cs.ac.cn:10062"
 )
@@ -220,7 +222,7 @@ func QueryNodeBundles(nodeAddress string, bundles []RemotePrefabInfo) float64 {
 		return sizes
 	}
 
-	klog.Infof("[Bundle Locality] Received sizes: %.2f MiB from node %s", response.Sizes, nodeAddress)
+	klog.Infof("[Bundle Locality] Received sizes: %.2f Bytes from node %s", response.Sizes, nodeAddress)
 
 	return response.Sizes
 }
@@ -253,7 +255,7 @@ func sumBundleScores(nodeInfo *framework.NodeInfo, pod *v1.Pod, totalNumNodes in
 		sizes := QueryNodeBundlesWrapper(nodeInfo, GetContainerBundles(normalizedBundleName(container.Image)))
 		// klog.Infof("[Bundle Locality] [PakCmp Before] sizes=%v, totalNumNodes=%v, sum+=%v\n", sizes, float64(totalNumNodes), sum)
 
-		scalingFactor := (len(nodeInfo.Pods) + 1) * (len(nodeInfo.Pods) + 1) // TODO: use totalNumNodes in some way
+		scalingFactor := math.Sqrt(float64(len(nodeInfo.Pods) + 1))
 
 		sum += int64(float64(sizes) / float64(scalingFactor))
 

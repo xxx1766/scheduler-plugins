@@ -4,6 +4,10 @@ import (
 	"testing"
 )
 
+func TestCalPriority(t *testing.T) {
+	t.Logf("Prio: %v\n", calculatePriority(12*mb, 1))
+}
+
 func TestQueryNodeBundles(t *testing.T) {
 	remoteBundles := GetContainerBundles(normalizedBundleName("sam2:latest"))
 
