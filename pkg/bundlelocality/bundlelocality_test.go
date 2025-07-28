@@ -5,10 +5,12 @@ import (
 )
 
 func TestQueryNodeBundles(t *testing.T) {
-	remoteBundles := GetContainerBundles(normalizedBundleName("yolo11"))
+	remoteBundles := GetContainerBundles(normalizedBundleName("sam2:latest"))
+
+	// t.Logf("remoteBundles[0]: %v, %v, %v\n", remoteBundles[0].Name, remoteBundles[0].Specifier, remoteBundles[0].Size)
 
 	/* for _, b := range remoteBundles {
-		t.Logf("Remote Bundle: %s, Type: %s, Version: %s, Size: %.2f MiB", b.name, b.specType, b.specifier, b.size)
+		t.Logf("Remote Bundle: %s, Type: %s, Version: %s, Size: %.2f MiB", b.Name, b.SpecType, b.Specifier, b.Size)
 	} */
 
 	QueryNodeBundles("127.0.0.1", remoteBundles)

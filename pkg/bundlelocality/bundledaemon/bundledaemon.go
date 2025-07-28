@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
+	"sync"
 
 	"k8s.io/klog/v2"
 
@@ -18,9 +20,15 @@ const (
 	endPort    string = "9998"
 	upstramSvc string = "https://prefab.cs.ac.cn:10062"
 	workDir    string = "/var/lib/taskc"
+	appJSON    string = workDir + "/apps.json"
+	infoJSON   string = workDir + "/PrefabService/File.json"
 )
 
-var bm *bundle.BundleManager
+type JSONPakInfo struct {
+	Filename string `json:"filename"`
+	Filetype string `json:"filetype"`
+	Filesize int    `json:"filesize"`
+}
 
 // refer to `TaskC/pkg/prefab/prefab.go` `type Prefab struct`
 type RemotePrefabInfo struct {
@@ -30,11 +38,38 @@ type RemotePrefabInfo struct {
 	Size      float64 `json:"size"`      // in MiB
 }
 
+type AppEntries struct {
+	TaskC   Entry   `json:"taskc"`
+	Prefabs []Entry `json:"prefabs"`
+}
+
+type Entry struct {
+	PrefabID    string `json:"prefabID"`
+	BlueprintID string `json:"blueprintID"`
+	PrefabSize  uint64 `json:"prefabSize"`
+}
+
 type LocalBundleInfo struct {
 	id      string
 	name    string
 	version string
 	size    float64 // in MiB
+}
+
+var apps map[string]AppEntries
+var bm *bundle.BundleManager
+var packageMap = make(map[string]JSONPakInfo)
+var mapMutex = &sync.RWMutex{}
+
+func init() {
+	data, err := os.ReadFile(appJSON)
+	if err != nil {
+		klog.Errorf("Failed to read apps.json: %v", err)
+	}
+	if err := json.Unmarshal(data, &apps); err != nil {
+		klog.Errorf("Failed to parse apps.json: %v", err)
+	}
+	ReloadFileJSON()
 }
 
 // localVer is "single" and acceptableVer is a range
@@ -49,7 +84,42 @@ func VersionMatch(specType string, name string, specifier string, version string
 	return decodedSpecifier.Contains(parsedVersion)
 }
 
-func GetLocalFileSize(id string) (int64, error) {
+func ReloadFileJSON() error {
+	mapMutex.Lock()
+	defer mapMutex.Unlock()
+
+	file, err := os.Open(infoJSON)
+	if err != nil {
+		return fmt.Errorf("failed to open info.json: %v", err)
+	}
+	defer file.Close()
+
+	decoder := json.NewDecoder(file)
+	err = decoder.Decode(&packageMap)
+	if err != nil {
+		return fmt.Errorf("failed to decode info.json: %v", err)
+	}
+
+	return nil
+}
+
+func GetPakSizeFileJSON(uuid string) (int64, error) { // Note: In Bytes!
+	err := ReloadFileJSON()
+	if err != nil {
+		return 0, err
+	}
+
+	mapMutex.RLock()
+	defer mapMutex.RUnlock()
+
+	if info, exists := packageMap[uuid]; exists {
+		return int64(info.Filesize), nil
+	}
+
+	return 0, fmt.Errorf("package %s not found in info.json", uuid)
+}
+
+func GetPakSizeHTTP(id string) (int64, error) {
 	url := fmt.Sprintf("%s/file?id=%s", upstramSvc, id)
 
 	client := &http.Client{}
@@ -80,6 +150,24 @@ func GetLocalFileSize(id string) (int64, error) {
 	}
 
 	return contentLength, nil
+}
+
+func CompareAndCalculateJSON(appE AppEntries) float64 {
+	sizeInBytes := 0
+
+	for _, e := range appE.Prefabs {
+		if e.PrefabID != "" {
+			if _, exists := packageMap[e.PrefabID]; exists {
+				sizeInBytes += int(e.PrefabSize)
+			} else {
+				// klog.Warningf("[Bundle Daemon] Prefab ID %s not found in info.json", e.PrefabID)
+			}
+		}
+	}
+
+	// fmt.Printf("[Bundle Daemon] Total size in bytes: %d, in megabytes: %.f\n", sizeInBytes, float64(sizeInBytes)/1024/1024)
+
+	return float64(sizeInBytes) / (1024 * 1024) // Convert bytes to MiB
 }
 
 func CompareAndCalculate(nodeIP string, l map[string][]LocalBundleInfo, r []RemotePrefabInfo) float64 {
@@ -147,7 +235,7 @@ func ListLocalBundles() map[string][]LocalBundleInfo {
 		id, exists := bm.GetBundleID(name, version) // ensure the bundle exists in the BundleManager
 
 		if exists {
-			size, err := GetLocalFileSize(id)
+			size, err := GetPakSizeHTTP(id)
 			if err != nil {
 				size = 1 // default size if the file size cannot be determined
 			}
@@ -193,12 +281,27 @@ func bundleHandler(w http.ResponseWriter, r *http.Request) {
 	/* for _, b := range remotePrefabs {
 		klog.Infof("[Bundle Daemon] Remote Bundle: %s, Type: %s, Version: %s, Size: %.2f MiB", b.Name, b.SpecType, b.Specifier, b.Size)
 	} */
+	var sizes = .0
+	app, isFixed := apps[remotePrefabs[0].Name]
 
-	sizes := CompareAndCalculate(nodeIP, ListLocalBundles(), remotePrefabs)
-	var response struct {
-		sizes float64
+	klog.Infof("[Bundle Daemon] nodeIP=%v, App: %s, Fixed: %v", nodeIP, remotePrefabs[0].Name, isFixed)
+
+	if !isFixed {
+		sizes = CompareAndCalculate(nodeIP, ListLocalBundles(), remotePrefabs[1:]) // skip the first one which is the closure prefab
+	} else {
+		if ReloadFileJSON() != nil {
+			klog.Errorf("[Bundle Daemon] nodeIP=%v, Failed to reload info.json", nodeIP)
+			sizes = .0
+		} else {
+			sizes = CompareAndCalculateJSON(app)
+		}
 	}
-	response.sizes = sizes
+	var response struct {
+		Sizes float64 `json:"sizes"`
+	}
+	response.Sizes = sizes
+
+	klog.Infof("[Bundle Daemon] nodeIP=%v, Total Size: %.2f MiB", nodeIP, response.Sizes)
 
 	w.Header().Set("Content-Type", "application/json")
 	resultBytes, err := json.Marshal(response)

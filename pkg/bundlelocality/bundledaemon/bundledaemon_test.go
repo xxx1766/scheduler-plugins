@@ -1,8 +1,9 @@
 package main
 
 import (
-	"github.com/L-F-Z/TaskC/pkg/bundle"
 	"testing"
+
+	"github.com/L-F-Z/TaskC/pkg/bundle"
 )
 
 const REPO_PYPI = "PyPI"
@@ -13,10 +14,9 @@ const REPO_PREFAB = "Prefab"
 const REPO_CLOSURE = "Closure"
 const REPO_K8S = "k8s"
 
-func TestGetSizes(t *testing.T) {
+func TestSizeFileJSON(t *testing.T) {
 	// Test 1
-	size, err := GetLocalFileSize("001d28b8-076b-4c0b-9a95-ecedf425d148")
-	// size, err := GetLocalFileSize("dd6b348a-b185-4ff2-9457-b668cbadb0d6")
+	size, err := GetPakSizeFileJSON("c394e36c-8327-42a7-8a78-a1e090cd7276")
 	if err != nil {
 		t.Errorf("Failed to get remote file size: %v", err)
 		return
@@ -28,7 +28,30 @@ func TestGetSizes(t *testing.T) {
 	t.Logf("Remote file size: %d bytes", size) // 395738
 
 	// Test 2
-	size, err = GetLocalFileSize("0")
+	size, err = GetPakSizeFileJSON("0")
+	if err == nil {
+		t.Errorf("Expected error for invalid ID, got size %d", size)
+		return
+	}
+	t.Logf("Expected error for invalid ID: %v", err)
+}
+
+func TestGetSizesHTTP(t *testing.T) {
+	// Test 1
+	size, err := GetPakSizeHTTP("001d28b8-076b-4c0b-9a95-ecedf425d148")
+	// size, err := GetPakSizeHTTP("dd6b348a-b185-4ff2-9457-b668cbadb0d6")
+	if err != nil {
+		t.Errorf("Failed to get remote file size: %v", err)
+		return
+	}
+	if size <= 0 {
+		t.Errorf("Expected size to be greater than 0, got %d", size)
+		return
+	}
+	t.Logf("Remote file size: %d bytes", size) // 395738
+
+	// Test 2
+	size, err = GetPakSizeHTTP("0")
 	if err == nil {
 		t.Errorf("Expected error for invalid ID, got size %d", size)
 		return
@@ -85,6 +108,10 @@ func TestVerMatch(t *testing.T) {
 	if VersionMatch(REPO_DOCKERHUB, "python", "3.11-slim", "3.10-slim") {
 		t.Errorf("Expected no version match for python 3.11-slim with 3.10-slim")
 	}
+}
+
+func TestCompareAndCalculateJSON(t *testing.T) {
+	CompareAndCalculateJSON(apps["sam2"])
 }
 
 func TestComp(t *testing.T) {

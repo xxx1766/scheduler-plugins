@@ -211,7 +211,7 @@ func QueryNodeBundles(nodeAddress string, bundles []RemotePrefabInfo) float64 {
 	}
 
 	var response struct {
-		sizes float64
+		Sizes float64 `json:"sizes"`
 	}
 
 	err = json.NewDecoder(resp.Body).Decode(&response)
@@ -220,9 +220,9 @@ func QueryNodeBundles(nodeAddress string, bundles []RemotePrefabInfo) float64 {
 		return sizes
 	}
 
-	klog.Infof("[Bundle Locality] Received sizes: %f from node %s", response.sizes, nodeAddress)
+	klog.Infof("[Bundle Locality] Received sizes: %.2f MiB from node %s", response.Sizes, nodeAddress)
 
-	return response.sizes
+	return response.Sizes
 }
 
 // sumBundleScores returns the sum of bundle scores of all the containers that are already on the node.
