@@ -165,7 +165,7 @@ func CompareAndCalculateJSON(appE AppEntries) float64 {
 		}
 	}
 
-	// fmt.Printf("[Bundle Daemon] Total size in bytes: %d, in megabytes: %.f\n", sizeInBytes, float64(sizeInBytes)/1024/1024)
+	fmt.Printf("[Bundle Daemon] Total size in bytes: %d B, in megabytes: %.f MiB\n", sizeInBytes, float64(sizeInBytes)/1024/1024)
 
 	return float64(sizeInBytes) / (1024 * 1024) // Convert bytes to MiB
 }
