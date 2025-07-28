@@ -165,9 +165,9 @@ func CompareAndCalculateJSON(appE AppEntries) float64 {
 		}
 	}
 
-	fmt.Printf("[Bundle Daemon] Total size in bytes: %d B, in megabytes: %.f MiB\n", sizeInBytes, float64(sizeInBytes)/1024/1024)
+	// fmt.Printf("[Bundle Daemon] Total size in bytes: %d B, in megabytes: %.f MiB\n", sizeInBytes, float64(sizeInBytes)
 
-	return float64(sizeInBytes) / (1024 * 1024) // Convert bytes to MiB
+	return float64(sizeInBytes) // Convert bytes to MiB
 }
 
 func CompareAndCalculate(nodeIP string, l map[string][]LocalBundleInfo, r []RemotePrefabInfo) float64 {
