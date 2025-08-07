@@ -294,15 +294,19 @@ func ListLocalBundles() map[string][]LocalBundleInfo {
 	return localBundleDict
 }
 
-func GetPulledImageNames(runtime string) []string {
-	var imageNames = []string{}
+func GetPulledImageNames(runtime string) map[string][]string {
+	imageMap := make(map[string][]string)
 
 	if runtime == "cri-o" {
 		cmd := exec.Command("crictl", "images", "--output", "json")
 		output, err := cmd.Output()
+
 		if err != nil {
 			fmt.Printf("Error executing command: %v\n", err)
-			return nil
+			output, err = os.ReadFile("crictl_images.json")
+			if err != nil {
+				return nil
+			}
 		}
 
 		var response crictlImagesResponse
@@ -311,7 +315,6 @@ func GetPulledImageNames(runtime string) []string {
 			return nil
 		}
 
-		imageMap := make(map[string][]string)
 		for _, image := range response.Images {
 			for _, repoTag := range image.RepoTags {
 				parts := strings.Split(repoTag, ":")
@@ -333,7 +336,7 @@ func GetPulledImageNames(runtime string) []string {
 		}
 	}
 
-	return imageNames
+	return imageMap
 }
 
 func handleRequest(w http.ResponseWriter, r *http.Request) ([]RemotePrefabInfo, string) {
@@ -393,18 +396,23 @@ func handleReponse(w http.ResponseWriter, r *http.Request, sizes float64) {
 	w.Write(resultBytes)
 }
 
-func layerHandler(w http.ResponseWriter, r *http.Request) {
-	remotePrefabs, nodeIP := handleRequest(w, r)
-
+func layerHandlerInner(remotePrefabs []RemotePrefabInfo, nodeIP string) float64 {
 	var sizes = .0
-	im, isFixed := virtManifestStore[remotePrefabs[0].Name]
+
+	// example: `11.0.1.37:9988/goharbor/testimg1`
+	fullName := remotePrefabs[0].Name
+
+	name := fullName
+	if lastSlash := strings.LastIndex(fullName, "/"); lastSlash != -1 {
+		name = fullName[lastSlash+1:]
+	}
+
+	im, isFixed := virtManifestStore[name]
 
 	klog.Infof("[Bundle Daemon] nodeIP=%v, App: %s, Fixed: %v", nodeIP, remotePrefabs[0].Name, isFixed)
 
 	if !isFixed {
-		sizes = .0 // fix required
-		handleReponse(w, r, sizes)
-		return
+		return .0
 	}
 
 	layerMap := make(map[string]LayerCal)
@@ -417,7 +425,11 @@ func layerHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	for _, img := range GetPulledImageNames(contRuntime) {
+	/* for u, v := range layerMap {
+		fmt.Printf("[Debug] %v %v\n", u, v)
+	} */
+
+	for img := range GetPulledImageNames(contRuntime) {
 		if im, ok := virtManifestStore[img]; ok {
 			for _, layer := range im.Layers {
 				cleanDigest := strings.TrimPrefix(layer, "sha256:")
@@ -425,11 +437,21 @@ func layerHandler(w http.ResponseWriter, r *http.Request) {
 					if !size.count {
 						size.count = true
 						sizes += size.size
+						// fmt.Printf("[Debug] %v + %v\n", cleanDigest, size.size)
 					}
 				}
 			}
 		}
 	}
+
+	// fmt.Printf("[Debug] sizes = %.f MiB\n", sizes)
+
+	return sizes
+}
+
+func layerHandler(w http.ResponseWriter, r *http.Request) {
+	remotePrefabs, nodeIP := handleRequest(w, r)
+	handleReponse(w, r, layerHandlerInner(remotePrefabs, nodeIP))
 }
 
 func bundleHandler(w http.ResponseWriter, r *http.Request) {

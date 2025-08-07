@@ -159,3 +159,29 @@ func TestComp(t *testing.T) {
 
 	t.Logf("size = %f\n", CompareAndCalculate("192.168.1.1", l, r))
 }
+
+func TestCrictlImages(t *testing.T) {
+	imageMap := GetPulledImageNames("cri-o")
+	for u, v := range imageMap {
+		t.Logf("Image: %s, Tags: %v", u, v)
+	}
+}
+
+func TestLayerHandler(t *testing.T) {
+	pi := []RemotePrefabInfo{}
+
+	pi = append(pi, RemotePrefabInfo{
+		SpecType:  "Closure",
+		Name:      "11.0.1.37:9988/goharbor/testimg1",
+		Specifier: "latest",
+		Size:      0., // Size is not used in this context
+	})
+	layerHandlerInner(pi, "108.160.167.148")
+}
+
+func TestPulledImages(t *testing.T) {
+	m := GetPulledImageNames("cri-o")
+	for k, v := range m {
+		t.Logf("%v %v\n", k, v)
+	}
+}

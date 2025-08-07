@@ -1,4 +1,85 @@
 {
+    "testimg1": {
+        "Name": "11.0.1.37:9988/goharbor/testimg1",
+        "Digest": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+        "RepoTags": [
+            "latest"
+        ],
+        "Architecture": "amd64",
+        "Os": "linux",
+        "Layers": [
+            "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+            "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+        ],
+        "LayersData": [
+            {
+                "MIMEType": "application/vnd.oci.image.layer.v1.tar+gzip",
+                "Digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+                "Size": 1234567,
+                "Annotations": null
+            },
+            {
+                "MIMEType": "application/vnd.oci.image.layer.v1.tar+gzip",
+                "Digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+                "Size": 7654321,
+                "Annotations": null
+            }
+        ]
+    },
+    "testimg2": {
+        "Name": "11.0.1.37:9988/goharbor/testimg2",
+        "Digest": "sha256:0000000000000000000000000000000000000000000000000000000000000002",
+        "RepoTags": [
+            "latest"
+        ],
+        "Architecture": "amd64",
+        "Os": "linux",
+        "Layers": [
+            "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+            "sha256:3333333333333333333333333333333333333333333333333333333333333333"
+        ],
+        "LayersData": [
+            {
+                "MIMEType": "application/vnd.oci.image.layer.v1.tar+gzip",
+                "Digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+                "Size": 7654321,
+                "Annotations": null
+            },
+            {
+                "MIMEType": "application/vnd.oci.image.layer.v1.tar+gzip",
+                "Digest": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+                "Size": 9876543,
+                "Annotations": null
+            }
+        ]
+    },
+    "testimg3": {
+        "Name": "11.0.1.37:9988/goharbor/testimg3",
+        "Digest": "sha256:0000000000000000000000000000000000000000000000000000000000000003",
+        "RepoTags": [
+            "latest"
+        ],
+        "Architecture": "amd64",
+        "Os": "linux",
+        "Layers": [
+            "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+            "sha256:3333333333333333333333333333333333333333333333333333333333333333"
+        ],
+        "LayersData": [
+            {
+                "MIMEType": "application/vnd.oci.image.layer.v1.tar+gzip",
+                "Digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+                "Size": 1234567,
+                "Annotations": null
+            },
+            {
+                "MIMEType": "application/vnd.oci.image.layer.v1.tar+gzip",
+                "Digest": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+                "Size": 9876543,
+                "Annotations": null
+            }
+        ]
+    },
     "clip": {
         "Name": "11.0.1.37:9988/goharbor/clip",
         "Digest": "sha256:b799aee84305f436c263d1a30dff6bc54209303862bfee07cb676bd4bb6c5296",
