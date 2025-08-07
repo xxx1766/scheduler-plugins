@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/exec"
 	"strconv"
 	"strings"
 	"sync"
@@ -17,12 +18,24 @@ import (
 )
 
 const (
-	endPort    string = "9998"
-	upstramSvc string = "https://prefab.cs.ac.cn:10062"
-	workDir    string = "/var/lib/taskc"
-	appJSON    string = workDir + "/apps.json"
-	infoJSON   string = workDir + "/PrefabService/File.json"
+	endPort     string = "9998"
+	upstramSvc  string = "https://prefab.cs.ac.cn:10062"
+	workDir     string = "/var/lib/taskc"
+	payloadJSON string = "payload.json"
+	appJSON     string = workDir + "/apps.json"
+	infoJSON    string = workDir + "/PrefabService/File.json"
+	contRuntime string = "cri-o"
 )
+
+type LayerData struct {
+	Digest string `json:"Digest"` // e.g., "sha256:1234567890abcdef..."
+	Size   int64  `json:"Size"`   // in bytes
+}
+
+type MiniImageManifest struct {
+	LayersData []LayerData `json:"LayersData"`
+	Layers     []string    `json:"Layers"`
+}
 
 type JSONPakInfo struct {
 	Filename string `json:"filename"`
@@ -56,10 +69,24 @@ type LocalBundleInfo struct {
 	size    float64 // in MiB
 }
 
+type LayerCal struct {
+	size  float64
+	count bool
+}
+
+type crictlImage struct {
+	RepoTags []string `json:"repoTags"`
+}
+
+type crictlImagesResponse struct {
+	Images []crictlImage `json:"images"`
+}
+
 var apps map[string]AppEntries
 var bm *bundle.BundleManager
 var packageMap = make(map[string]JSONPakInfo)
 var mapMutex = &sync.RWMutex{}
+var virtManifestStore map[string]MiniImageManifest
 
 func init() {
 	data, err := os.ReadFile(appJSON)
@@ -70,6 +97,7 @@ func init() {
 		klog.Errorf("Failed to parse apps.json: %v", err)
 	}
 	ReloadFileJSON()
+	ReloadPayloadJSON()
 }
 
 // localVer is "single" and acceptableVer is a range
@@ -101,6 +129,21 @@ func ReloadFileJSON() error {
 	}
 
 	return nil
+}
+
+func ReloadPayloadJSON() {
+	jsonData, err := os.ReadFile(payloadJSON)
+	if err != nil {
+		return
+	}
+
+	var manifests map[string]MiniImageManifest
+	err = json.Unmarshal(jsonData, &manifests)
+	if err != nil {
+		return
+	}
+
+	virtManifestStore = manifests
 }
 
 func GetPakSizeFileJSON(uuid string) (int64, error) { // Note: In Bytes!
@@ -251,7 +294,49 @@ func ListLocalBundles() map[string][]LocalBundleInfo {
 	return localBundleDict
 }
 
-func bundleHandler(w http.ResponseWriter, r *http.Request) {
+func GetPulledImageNames(runtime string) []string {
+	var imageNames = []string{}
+
+	if runtime == "cri-o" {
+		cmd := exec.Command("crictl", "images", "--output", "json")
+		output, err := cmd.Output()
+		if err != nil {
+			fmt.Printf("Error executing command: %v\n", err)
+			return nil
+		}
+
+		var response crictlImagesResponse
+		if err := json.Unmarshal(output, &response); err != nil {
+			fmt.Printf("Error parsing JSON: %v\n", err)
+			return nil
+		}
+
+		imageMap := make(map[string][]string)
+		for _, image := range response.Images {
+			for _, repoTag := range image.RepoTags {
+				parts := strings.Split(repoTag, ":")
+				if len(parts) < 2 {
+					continue
+				}
+
+				fullName := strings.Join(parts[:len(parts)-1], ":")
+
+				name := fullName
+				if lastSlash := strings.LastIndex(fullName, "/"); lastSlash != -1 {
+					name = fullName[lastSlash+1:]
+				}
+
+				tag := parts[len(parts)-1]
+
+				imageMap[name] = append(imageMap[name], tag)
+			}
+		}
+	}
+
+	return imageNames
+}
+
+func handleRequest(w http.ResponseWriter, r *http.Request) ([]RemotePrefabInfo, string) {
 	/* query := r.URL.Query()
 	bundleName := query.Get("name")
 	bundleVersion := query.Get("version")
@@ -261,26 +346,95 @@ func bundleHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	} */
 
-	if r.Method != "POST" {
-		http.Error(w, "[Bundle Daemon] method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
+	/* for _, b := range remotePrefabs {
+		klog.Infof("[Bundle Daemon] Remote Bundle: %s, Type: %s, Version: %s, Size: %.2f MiB", b.Name, b.SpecType, b.Specifier, b.Size)
+	} */
 
 	nodeIP := r.RemoteAddr
 	if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
 		nodeIP = host
 	}
 
+	if r.Method != "POST" {
+		http.Error(w, "[Daemon] method not allowed", http.StatusMethodNotAllowed)
+		return nil, nodeIP
+	}
+
 	var remotePrefabs []RemotePrefabInfo
 	err := json.NewDecoder(r.Body).Decode(&remotePrefabs)
 	if err != nil {
 		http.Error(w, "[Bundle Daemon] invalid JSON payload", http.StatusBadRequest)
+		return nil, nodeIP
+	}
+
+	return remotePrefabs, nodeIP
+}
+
+func handleReponse(w http.ResponseWriter, r *http.Request, sizes float64) {
+	var response struct {
+		Sizes float64 `json:"sizes"`
+	}
+	response.Sizes = sizes
+
+	nodeIP := r.RemoteAddr
+	if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
+		nodeIP = host
+	}
+
+	klog.Infof("[Bundle Daemon] nodeIP=%v, Total Size: %.2f MiB", nodeIP, response.Sizes)
+
+	w.Header().Set("Content-Type", "application/json")
+	resultBytes, err := json.Marshal(response)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	/* for _, b := range remotePrefabs {
-		klog.Infof("[Bundle Daemon] Remote Bundle: %s, Type: %s, Version: %s, Size: %.2f MiB", b.Name, b.SpecType, b.Specifier, b.Size)
-	} */
+	w.Write(resultBytes)
+}
+
+func layerHandler(w http.ResponseWriter, r *http.Request) {
+	remotePrefabs, nodeIP := handleRequest(w, r)
+
+	var sizes = .0
+	im, isFixed := virtManifestStore[remotePrefabs[0].Name]
+
+	klog.Infof("[Bundle Daemon] nodeIP=%v, App: %s, Fixed: %v", nodeIP, remotePrefabs[0].Name, isFixed)
+
+	if !isFixed {
+		sizes = .0 // fix required
+		handleReponse(w, r, sizes)
+		return
+	}
+
+	layerMap := make(map[string]LayerCal)
+
+	for _, layer := range im.LayersData {
+		cleanDigest := strings.TrimPrefix(layer.Digest, "sha256:")
+		layerMap[cleanDigest] = LayerCal{
+			size:  float64(layer.Size),
+			count: false,
+		}
+	}
+
+	for _, img := range GetPulledImageNames(contRuntime) {
+		if im, ok := virtManifestStore[img]; ok {
+			for _, layer := range im.Layers {
+				cleanDigest := strings.TrimPrefix(layer, "sha256:")
+				if size, exists := layerMap[cleanDigest]; exists {
+					if !size.count {
+						size.count = true
+						sizes += size.size
+					}
+				}
+			}
+		}
+	}
+}
+
+func bundleHandler(w http.ResponseWriter, r *http.Request) {
+	remotePrefabs, nodeIP := handleRequest(w, r)
+
 	var sizes = .0
 	app, isFixed := apps[remotePrefabs[0].Name]
 
@@ -296,21 +450,8 @@ func bundleHandler(w http.ResponseWriter, r *http.Request) {
 			sizes = CompareAndCalculateJSON(app)
 		}
 	}
-	var response struct {
-		Sizes float64 `json:"sizes"`
-	}
-	response.Sizes = sizes
 
-	klog.Infof("[Bundle Daemon] nodeIP=%v, Total Size: %.2f MiB", nodeIP, response.Sizes)
-
-	w.Header().Set("Content-Type", "application/json")
-	resultBytes, err := json.Marshal(response)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	w.Write(resultBytes)
+	handleReponse(w, r, sizes)
 }
 
 func main() {
@@ -323,8 +464,9 @@ func main() {
 	}
 
 	http.HandleFunc("/bundles", bundleHandler)
+	http.HandleFunc("/layers", layerHandler)
 
-	klog.Info(fmt.Sprintf("[Bundle Daemon] Starting HTTP Server on :%s", endPort))
+	klog.Info(fmt.Sprintf("[Blob Daemon] Starting HTTP Server on :%s", endPort))
 	err = http.ListenAndServe(fmt.Sprintf(":%s", endPort), nil)
 	if err != nil {
 		klog.Fatalf("Failed to start server: %v", err)

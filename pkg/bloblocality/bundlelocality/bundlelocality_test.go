@@ -5,7 +5,7 @@ import (
 )
 
 func TestCalPriority(t *testing.T) {
-	t.Logf("Prio: %v\n", calculatePriority(12*mb, 1))
+	t.Logf("Prio: %v\n", calculatePriority(150/2*mb, 1))
 }
 
 func TestQueryNodeBundles(t *testing.T) {

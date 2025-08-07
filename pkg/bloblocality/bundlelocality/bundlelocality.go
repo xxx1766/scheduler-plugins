@@ -27,8 +27,8 @@ import (
 // prefab bundles compressed and stored in registries; 90%ile of bundles on dockerhub drops into this range.
 const (
 	mb                    int64  = 1024 * 1024
-	minThreshold          int64  = 23 * mb  // 24117248
-	maxContainerThreshold int64  = 250 * mb // 1048576000
+	minThreshold          int64  = 20 * mb  // 24117248
+	maxContainerThreshold int64  = 100 * mb // 1048576000
 	endPort               string = "9998"
 	upstramSvc            string = "https://prefab.cs.ac.cn:10062"
 )

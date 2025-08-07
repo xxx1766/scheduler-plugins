@@ -6,7 +6,7 @@ spec:
   schedulerName: scheduler-plugins-scheduler
   containers:
   - name: workload
-    image: yolo11:latest
+    image: sb3:latest
     resources:
       limits:
         cpu: "2000m"

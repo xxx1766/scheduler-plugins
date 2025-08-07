@@ -20,6 +20,8 @@ data:
           enabled:
           - name: 'BundleLocality'
             weight: 2
+          - name: 'LayerLocality'
+            weight: 2
         multiPoint:
           enabled:
           {{- range $.Values.plugins.enabled }}

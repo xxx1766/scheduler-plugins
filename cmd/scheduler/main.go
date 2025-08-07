@@ -24,7 +24,8 @@ import (
 	_ "k8s.io/component-base/metrics/prometheus/version"  // for version metric registration
 	"k8s.io/kubernetes/cmd/kube-scheduler/app"
 
-	"sigs.k8s.io/scheduler-plugins/pkg/bundlelocality"
+	"sigs.k8s.io/scheduler-plugins/pkg/bloblocality/bundlelocality"
+	"sigs.k8s.io/scheduler-plugins/pkg/bloblocality/layerlocality"
 
 	/*
 		"sigs.k8s.io/scheduler-plugins/pkg/capacityscheduling"
@@ -53,6 +54,7 @@ func main() {
 	// used by various kinds of workloads.
 	command := app.NewSchedulerCommand(
 		app.WithPlugin(bundlelocality.Name, bundlelocality.New),
+		app.WithPlugin(layerlocality.Name, layerlocality.New),
 		/*
 			app.WithPlugin(capacityscheduling.Name, capacityscheduling.New),
 			app.WithPlugin(coscheduling.Name, coscheduling.New),
