@@ -69,11 +69,6 @@ type LocalBundleInfo struct {
 	size    float64 // in MiB
 }
 
-type LayerCal struct {
-	size  float64
-	count bool
-}
-
 type crictlImage struct {
 	RepoTags []string `json:"repoTags"`
 }
@@ -415,14 +410,13 @@ func layerHandlerInner(remotePrefabs []RemotePrefabInfo, nodeIP string) float64 
 		return .0
 	}
 
-	layerMap := make(map[string]LayerCal)
+	layerMap := make(map[string]float64)
+	calcuMap := make(map[string]bool)
 
 	for _, layer := range im.LayersData {
 		cleanDigest := strings.TrimPrefix(layer.Digest, "sha256:")
-		layerMap[cleanDigest] = LayerCal{
-			size:  float64(layer.Size),
-			count: false,
-		}
+		layerMap[cleanDigest] = float64(layer.Size)
+		calcuMap[cleanDigest] = false
 	}
 
 	/* for u, v := range layerMap {
@@ -434,10 +428,10 @@ func layerHandlerInner(remotePrefabs []RemotePrefabInfo, nodeIP string) float64 
 			for _, layer := range im.Layers {
 				cleanDigest := strings.TrimPrefix(layer, "sha256:")
 				if size, exists := layerMap[cleanDigest]; exists {
-					if !size.count {
-						size.count = true
-						sizes += size.size
-						// fmt.Printf("[Debug] %v + %v\n", cleanDigest, size.size)
+					if !calcuMap[cleanDigest] {
+						calcuMap[cleanDigest] = true
+						sizes += size
+						// fmt.Printf("[Debug] %v +%v\n", cleanDigest, size)
 					}
 				}
 			}

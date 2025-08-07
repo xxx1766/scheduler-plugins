@@ -284,6 +284,21 @@
       },
       "username": "root",
       "pinned": false
+    },
+    {
+      "id": "sha256:00000000-0000-0000-0000-000000000002",
+      "repoTags": [
+        "11.0.1.37:9988/goharbor/testimg2:latest"
+      ],
+      "repoDigests": [
+        "brandnewworld/controller@sha256:00000000-0000-0000-0000-000000000001"
+      ],
+      "size": "57295798",
+      "uid": {
+        "value": "0"
+      },
+      "username": "root",
+      "pinned": false
     }
   ]
 }
