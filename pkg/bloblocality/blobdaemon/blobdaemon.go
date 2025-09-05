@@ -79,7 +79,8 @@ type crictlImagesResponse struct {
 
 var apps map[string]AppEntries
 var bm *bundle.BundleManager
-var packageMap = make(map[string]JSONPakInfo)
+// var packageMap = make(map[string]JSONPakInfo)
+var packageMaps = make(map[string]map[string]JSONPakInfo)
 var mapMutex = &sync.RWMutex{}
 var virtManifestStore map[string]MiniImageManifest
 
@@ -111,19 +112,54 @@ func ReloadFileJSON() error {
 	mapMutex.Lock()
 	defer mapMutex.Unlock()
 
-	file, err := os.Open(infoJSON)
+	packageMaps = make(map[string]map[string]JSONPakInfo)
+
+	for idx :=; idx <= 1000; idx++ {
+		folderName := fmt.Sprintf("10.0.%d.%d", idx/250, idx%250+1)
+		filePath := filepath.Join(folderName, infoJSON)
+
+		file, err := os.Open(filePath)
+		if err != nil {
+			klog.Warningf("failed to open %s: %v", filePath, err)
+			continue
+		}
+		var tempMap map[string]JSONPakInfo
+		decoder := json.NewDecoder(file)
+		err = decoder.Decode(&tempMap)
+		file.Close()
+
+		if err != nil {
+			klog.Warningf("failed to decode %s: %v", filePath, err)
+			continue
+		}
+
+		packageMaps[folderName] = tempMap
+	}
+
+	return nil
+	
+}
+
+func ReloadFileJSONFromNodeIP(nodeIP string) error {
+	mapMutex.Lock()
+	defer mapMutex.Unlock()
+
+	filePath := filepath.Join(nodeIP, infoJSON)
+	file, err := os.Open(filePath)
 	if err != nil {
 		return fmt.Errorf("failed to open info.json: %v", err)
 	}
 	defer file.Close()
-
+	
+	var tempMap map[string]JSONPakInfo
 	decoder := json.NewDecoder(file)
-	err = decoder.Decode(&packageMap)
+	err = decoder.Decode(&tempMap)
 	if err != nil {
 		return fmt.Errorf("failed to decode info.json: %v", err)
 	}
-
+	packageMaps[nodeIP] = tempMap
 	return nil
+
 }
 
 func ReloadPayloadJSON() {
