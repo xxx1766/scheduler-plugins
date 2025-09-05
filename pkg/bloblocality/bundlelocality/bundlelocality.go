@@ -166,8 +166,13 @@ func QueryNodeBundlesWrapper(nodeInfo *framework.NodeInfo, bundles []RemotePrefa
 }
 
 func QueryNodeBundles(nodeAddress string, bundles []RemotePrefabInfo) float64 {
-	klog.Infof("[Bundle Locality] Trying to query http://%s:%s/bundles", nodeAddress, endPort)
-	baseURL := fmt.Sprintf("http://%s:%s/bundles", nodeAddress, endPort)
+	/* for real test */
+	// klog.Infof("[Bundle Locality] Trying to query http://%s:%s/bundles", nodeAddress, endPort)
+	// baseURL := fmt.Sprintf("http://%s:%s/bundles", nodeAddress, endPort)
+	
+	/* for simulating test */
+	baseURL := fmt.Sprintf("http://localhost:%s/bundles/%s", endPort, nodeAddress)
+	klog.Infof("[Bundle Locality] Trying to query %s", baseURL)
 
 	/* params := url.Values{}
 	params.Add("name", bundleName)

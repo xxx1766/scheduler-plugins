@@ -347,11 +347,23 @@ func handleRequest(w http.ResponseWriter, r *http.Request) ([]RemotePrefabInfo, 
 	/* for _, b := range remotePrefabs {
 		klog.Infof("[Bundle Daemon] Remote Bundle: %s, Type: %s, Version: %s, Size: %.2f MiB", b.Name, b.SpecType, b.Specifier, b.Size)
 	} */
+	path := r.URL.Path
+	var nodeIP string
 
-	nodeIP := r.RemoteAddr
-	if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
-		nodeIP = host
+	if string.HasPrefix(path, "/bundles/") {
+		nodeIP = strings.TrimPrefix(path, "/bundles/")
+	} else if strings.HasPrefix(path, "/layers/") {
+		nodeIP = strings.TrimPrefix(path, "/layers/")
+	} else {
+		http.Error(w, "Invalid path format. Expected /bundles/{nodeIP} or /layers/{nodeIP}", http.StatusBadRequest)
+		return nil, ""
 	}
+	
+	if nodeIP == "" {
+		http.Error(w, "Node IP is required in path", http.StatusBadRequest)
+		return nil, ""
+	}
+	klog.Infof("[Daemon] Extracted nodeIP from path: %s", nodeIP)
 
 	if r.Method != "POST" {
 		http.Error(w, "[Daemon] method not allowed", http.StatusMethodNotAllowed)
@@ -479,8 +491,8 @@ func main() {
 		klog.Fatalf("[Bundle Daemon] Failed to create BundleManager: %v", err)
 	}
 
-	http.HandleFunc("/bundles", bundleHandler)
-	http.HandleFunc("/layers", layerHandler)
+	http.HandleFunc("/bundles/", bundleHandler)
+	http.HandleFunc("/layers/", layerHandler)
 
 	klog.Info(fmt.Sprintf("[Blob Daemon] Starting HTTP Server on :%s", endPort))
 	err = http.ListenAndServe(fmt.Sprintf(":%s", endPort), nil)

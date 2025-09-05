@@ -166,8 +166,13 @@ func QueryNodeLayersWrapper(nodeInfo *framework.NodeInfo, layers []RemotePrefabI
 }
 
 func QueryNodeLayers(nodeAddress string, layers []RemotePrefabInfo) float64 {
-	klog.Infof("[Layer Locality] Trying to query http://%s:%s/layers", nodeAddress, endPort)
-	baseURL := fmt.Sprintf("http://%s:%s/layers", nodeAddress, endPort)
+	/* for real test */
+	// klog.Infof("[Layer Locality] Trying to query http://%s:%s/layers", nodeAddress, endPort)
+	// baseURL := fmt.Sprintf("http://%s:%s/layers", nodeAddress, endPort)
+	
+	/* for simulating test */
+	baseURL := fmt.Sprintf("http://localhost:%s/layers/%s", endPort, nodeAddress)
+	klog.Infof("[Layer Locality] Trying to query %s", baseURL)
 
 	/* params := url.Values{}
 	params.Add("name", layerName)
