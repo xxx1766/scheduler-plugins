@@ -79,8 +79,7 @@ type crictlImagesResponse struct {
 
 var apps map[string]AppEntries
 var bm *bundle.BundleManager
-// var packageMap = make(map[string]JSONPakInfo)
-var packageMaps = make(map[string]map[string]JSONPakInfo)
+var packageMap = make(map[string]JSONPakInfo)
 var mapMutex = &sync.RWMutex{}
 var virtManifestStore map[string]MiniImageManifest
 
@@ -112,54 +111,19 @@ func ReloadFileJSON() error {
 	mapMutex.Lock()
 	defer mapMutex.Unlock()
 
-	packageMaps = make(map[string]map[string]JSONPakInfo)
-
-	for idx :=; idx <= 1000; idx++ {
-		folderName := fmt.Sprintf("10.0.%d.%d", idx/250, idx%250+1)
-		filePath := filepath.Join(folderName, infoJSON)
-
-		file, err := os.Open(filePath)
-		if err != nil {
-			klog.Warningf("failed to open %s: %v", filePath, err)
-			continue
-		}
-		var tempMap map[string]JSONPakInfo
-		decoder := json.NewDecoder(file)
-		err = decoder.Decode(&tempMap)
-		file.Close()
-
-		if err != nil {
-			klog.Warningf("failed to decode %s: %v", filePath, err)
-			continue
-		}
-
-		packageMaps[folderName] = tempMap
-	}
-
-	return nil
-	
-}
-
-func ReloadFileJSONFromNodeIP(nodeIP string) error {
-	mapMutex.Lock()
-	defer mapMutex.Unlock()
-
-	filePath := filepath.Join(nodeIP, infoJSON)
-	file, err := os.Open(filePath)
+	file, err := os.Open(infoJSON)
 	if err != nil {
 		return fmt.Errorf("failed to open info.json: %v", err)
 	}
 	defer file.Close()
-	
-	var tempMap map[string]JSONPakInfo
+
 	decoder := json.NewDecoder(file)
-	err = decoder.Decode(&tempMap)
+	err = decoder.Decode(&packageMap)
 	if err != nil {
 		return fmt.Errorf("failed to decode info.json: %v", err)
 	}
-	packageMaps[nodeIP] = tempMap
-	return nil
 
+	return nil
 }
 
 func ReloadPayloadJSON() {
@@ -383,23 +347,11 @@ func handleRequest(w http.ResponseWriter, r *http.Request) ([]RemotePrefabInfo, 
 	/* for _, b := range remotePrefabs {
 		klog.Infof("[Bundle Daemon] Remote Bundle: %s, Type: %s, Version: %s, Size: %.2f MiB", b.Name, b.SpecType, b.Specifier, b.Size)
 	} */
-	path := r.URL.Path
-	var nodeIP string
 
-	if string.HasPrefix(path, "/bundles/") {
-		nodeIP = strings.TrimPrefix(path, "/bundles/")
-	} else if strings.HasPrefix(path, "/layers/") {
-		nodeIP = strings.TrimPrefix(path, "/layers/")
-	} else {
-		http.Error(w, "Invalid path format. Expected /bundles/{nodeIP} or /layers/{nodeIP}", http.StatusBadRequest)
-		return nil, ""
+	nodeIP := r.RemoteAddr
+	if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
+		nodeIP = host
 	}
-	
-	if nodeIP == "" {
-		http.Error(w, "Node IP is required in path", http.StatusBadRequest)
-		return nil, ""
-	}
-	klog.Infof("[Daemon] Extracted nodeIP from path: %s", nodeIP)
 
 	if r.Method != "POST" {
 		http.Error(w, "[Daemon] method not allowed", http.StatusMethodNotAllowed)
@@ -527,8 +479,8 @@ func main() {
 		klog.Fatalf("[Bundle Daemon] Failed to create BundleManager: %v", err)
 	}
 
-	http.HandleFunc("/bundles/", bundleHandler)
-	http.HandleFunc("/layers/", layerHandler)
+	http.HandleFunc("/bundles", bundleHandler)
+	http.HandleFunc("/layers", layerHandler)
 
 	klog.Info(fmt.Sprintf("[Blob Daemon] Starting HTTP Server on :%s", endPort))
 	err = http.ListenAndServe(fmt.Sprintf(":%s", endPort), nil)
