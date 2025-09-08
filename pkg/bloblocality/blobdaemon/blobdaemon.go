@@ -20,7 +20,7 @@ import (
 const (
 	endPort     string = "9998"
 	upstramSvc  string = "https://prefab.cs.ac.cn:10062"
-	workDir     string = "/root/simulatingTaskc"
+	workDir     string = "/root/simulating"
 	payloadJSON string = "payload.json"
 	appJSON     string = "/apps.json"
 	infoJSON    string = "/PrefabService/File.json"
