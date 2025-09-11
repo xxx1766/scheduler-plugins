@@ -1,12 +1,12 @@
 {
     "clip": {
-        "RepoTags": [
-                "latest"
+        "repoTags": [
+                "clip:latest"
             ]
     },
     "lora": {
-        "RepoTags": [
-                "latest"
+        "repoTags": [
+                "lora:latest"
             ]
     }        
 }

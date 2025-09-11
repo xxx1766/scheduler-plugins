@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"path/filepath"
 
 	"k8s.io/klog/v2"
 
@@ -19,10 +20,11 @@ import (
 
 const (
 	endPort     string = "9998"
-	upstramSvc  string = "https://prefab.cs.ac.cn:10062"
+	upstramSvc  string = "http://9.0.3.34:9999"
+	// upstramSvc  string = "https://prefab.cs.ac.cn:10062"
 	workDir     string = "/root/simulating"
 	payloadJSON string = "payload.json"
-	appJSON     string = "/apps.json"
+	appJSON     string = "apps.json"
 	infoJSON    string = "/PrefabService/File.json"
 	contRuntime string = "cri-o"
 )
@@ -79,7 +81,7 @@ type crictlImagesResponse struct {
 
 var apps map[string]AppEntries
 var bm *bundle.BundleManager
-var bms map[string]*bundle.BundleManager
+var bms = make(map[string]*bundle.BundleManager) 
 // var packageMap = make(map[string]JSONPakInfo)
 var packageMaps = make(map[string]map[string]JSONPakInfo)
 var mapMutex = &sync.RWMutex{}
@@ -87,7 +89,7 @@ var virtManifestStore map[string]MiniImageManifest
 var localManifest map[string]MiniImageManifest
 
 func init() {
-	data, err := os.ReadFile(workDir+appJSON)
+	data, err := os.ReadFile(appJSON)
 	if err != nil {
 		klog.Errorf("Failed to read apps.json: %v", err)
 	}
@@ -116,8 +118,8 @@ func ReloadFileJSON() error {
 
 	packageMaps = make(map[string]map[string]JSONPakInfo)
 
-	for idx :=; idx <= 1000; idx++ {
-		folderName := fmt.Sprintf("10.0.%d.%d", idx/250, idx%250+1)
+	for idx := 1; idx <= 1000; idx++ {
+		folderName := fmt.Sprintf("/10.0.%d.%d", idx/250, idx%250+1)
 		filePath := filepath.Join(workDir+folderName, infoJSON)
 
 		file, err := os.Open(filePath)
@@ -146,7 +148,7 @@ func ReloadFileJSONFromNodeIP(nodeIP string) error {
 	mapMutex.Lock()
 	defer mapMutex.Unlock()
 
-	filePath := filepath.Join(workDir+nodeIP, infoJSON)
+	filePath := filepath.Join(workDir+"/"+nodeIP, infoJSON)
 	file, err := os.Open(filePath)
 	if err != nil {
 		return fmt.Errorf("failed to open info.json: %v", err)
@@ -371,28 +373,45 @@ func GetPulledImageNames(runtime string) map[string][]string {
 
 	return imageMap
 }
+
 func GetPulledImageNamesFromFile(nodeIP string) map[string][]string {
 	imageMap := make(map[string][]string)
 
-	filePath := filepath.Join(workDir+nodeIP, "/images.json")
+	filePath := filepath.Join(workDir+"/"+nodeIP, "/images.json")
 	file, err := os.ReadFile(filePath)
 	if err != nil {
 		return nil
 	}
 
 	var response crictlImagesResponse
-	if err := json.Unmarshal(output, &response); err != nil {
-			fmt.Printf("Error parsing JSON: %v\n", err)
-			return nil
-		}
+	if err := json.Unmarshal(file, &response); err != nil {
+		fmt.Printf("Error parsing JSON: %v\n", err)
+		return nil
+	}
 	for _, image := range response.Images {
 		for _, repoTag := range image.RepoTags {
-			imageMap[image] = append(imageMap[image], repoTag)
+			parts := strings.Split(repoTag, ":")
+			if len(parts) < 2 {
+				continue
+			}
+
+			fullName := strings.Join(parts[:len(parts)-1], ":")
+
+			name := fullName
+			if lastSlash := strings.LastIndex(fullName, "/"); lastSlash != -1 {
+				name = fullName[lastSlash+1:]
+			}
+
+			tag := parts[len(parts)-1]
+
+			imageMap[name] = append(imageMap[name], tag)
+				
 		}
 	}
 
 	return imageMap
 }
+
 func handleRequest(w http.ResponseWriter, r *http.Request) ([]RemotePrefabInfo, string) {
 	/* query := r.URL.Query()
 	bundleName := query.Get("name")
@@ -409,7 +428,7 @@ func handleRequest(w http.ResponseWriter, r *http.Request) ([]RemotePrefabInfo, 
 	path := r.URL.Path
 	var nodeIP string
 
-	if string.HasPrefix(path, "/bundles/") {
+	if strings.HasPrefix(path, "/bundles/") {
 		nodeIP = strings.TrimPrefix(path, "/bundles/")
 	} else if strings.HasPrefix(path, "/layers/") {
 		nodeIP = strings.TrimPrefix(path, "/layers/")
@@ -432,7 +451,7 @@ func handleRequest(w http.ResponseWriter, r *http.Request) ([]RemotePrefabInfo, 
 	var remotePrefabs []RemotePrefabInfo
 	err := json.NewDecoder(r.Body).Decode(&remotePrefabs)
 	if err != nil {
-		http.Error(w, "[Bundle Daemon] invalid JSON payload", http.StatusBadRequest)
+		http.Error(w, "[Daemon] invalid JSON payload", http.StatusBadRequest)
 		return nil, nodeIP
 	}
 
@@ -450,7 +469,7 @@ func handleReponse(w http.ResponseWriter, r *http.Request, sizes float64) {
 		nodeIP = host
 	}
 
-	klog.Infof("[Bundle Daemon] nodeIP=%v, Total Size: %.2f MiB", nodeIP, response.Sizes)
+	klog.Infof("[Daemon] nodeIP=%v, Total Size: %.2f B", nodeIP, response.Sizes)
 
 	w.Header().Set("Content-Type", "application/json")
 	resultBytes, err := json.Marshal(response)
@@ -475,7 +494,7 @@ func layerHandlerInner(remotePrefabs []RemotePrefabInfo, nodeIP string) float64 
 
 	im, isFixed := virtManifestStore[name]
 
-	klog.Infof("[Bundle Daemon] nodeIP=%v, App: %s, Fixed: %v", nodeIP, remotePrefabs[0].Name, isFixed)
+	klog.Infof("[Layer Daemon] nodeIP=%v, App: %s, Fixed: %v", nodeIP, remotePrefabs[0].Name, isFixed)
 
 	if !isFixed {
 		return .0
@@ -502,14 +521,14 @@ func layerHandlerInner(remotePrefabs []RemotePrefabInfo, nodeIP string) float64 
 					if !calcuMap[cleanDigest] {
 						calcuMap[cleanDigest] = true
 						sizes += size
-						// fmt.Printf("[Debug] %v +%v\n", cleanDigest, size)
+						// klog.Infof("[Debug] %v +%v\n", cleanDigest, size)
 					}
 				}
 			}
 		}
 	}
 
-	// fmt.Printf("[Debug] sizes = %.f MiB\n", sizes)
+	// klog.Infof("[Debug] sizes = %.f MiB\n", sizes)
 
 	return sizes
 }
@@ -546,7 +565,7 @@ func main() {
 	var err error
 
 	for idx := 1; idx <= 1000; idx++ {
-		folderName := fmt.Sprintf("10.0.%d.%d", idx/250, idx%250+1)
+		folderName := fmt.Sprintf("/10.0.%d.%d", idx/250, idx%250+1)
 		// bm, err = bundle.NewBundleManager(workDir, upstramSvc)
 		bms[folderName], err = bundle.NewBundleManager(workDir+folderName, upstramSvc)
 		if err != nil {

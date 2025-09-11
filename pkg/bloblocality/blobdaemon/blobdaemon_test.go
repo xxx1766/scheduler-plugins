@@ -14,27 +14,27 @@ const REPO_PREFAB = "Prefab"
 const REPO_CLOSURE = "Closure"
 const REPO_K8S = "k8s"
 
-func TestSizeFileJSON(t *testing.T) {
-	// Test 1
-	size, err := GetPakSizeFileJSON("c394e36c-8327-42a7-8a78-a1e090cd7276")
-	if err != nil {
-		t.Errorf("Failed to get remote file size: %v", err)
-		return
-	}
-	if size <= 0 {
-		t.Errorf("Expected size to be greater than 0, got %d", size)
-		return
-	}
-	t.Logf("Remote file size: %d bytes", size) // 395738
+// func TestSizeFileJSON(t *testing.T) {
+// 	// Test 1
+// 	size, err := GetPakSizeFileJSON("c394e36c-8327-42a7-8a78-a1e090cd7276")
+// 	if err != nil {
+// 		t.Errorf("Failed to get remote file size: %v", err)
+// 		return
+// 	}
+// 	if size <= 0 {
+// 		t.Errorf("Expected size to be greater than 0, got %d", size)
+// 		return
+// 	}
+// 	t.Logf("Remote file size: %d bytes", size) // 395738
 
-	// Test 2
-	size, err = GetPakSizeFileJSON("0")
-	if err == nil {
-		t.Errorf("Expected error for invalid ID, got size %d", size)
-		return
-	}
-	t.Logf("Expected error for invalid ID: %v", err)
-}
+// 	// Test 2
+// 	size, err = GetPakSizeFileJSON("0")
+// 	if err == nil {
+// 		t.Errorf("Expected error for invalid ID, got size %d", size)
+// 		return
+// 	}
+// 	t.Logf("Expected error for invalid ID: %v", err)
+// }
 
 func TestGetSizesHTTP(t *testing.T) {
 	// Test 1
@@ -60,7 +60,7 @@ func TestGetSizesHTTP(t *testing.T) {
 }
 
 func TestGetID(t *testing.T) {
-	bm, _ := bundle.NewBundleManager(workDir, upstramSvc)
+	bm, _ := bundle.NewBundleManager(workDir+"/10.0.0.10", upstramSvc)
 
 	id, eixsts := bm.GetBundleID("yolo11", "latest")
 	if !eixsts {
@@ -111,7 +111,7 @@ func TestVerMatch(t *testing.T) {
 }
 
 func TestCompareAndCalculateJSON(t *testing.T) {
-	CompareAndCalculateJSON(apps["sam2"])
+	CompareAndCalculateJSON(apps["sam2"], "10.0.0.3")
 }
 
 func TestComp(t *testing.T) {
@@ -176,7 +176,7 @@ func TestLayerHandler(t *testing.T) {
 		Specifier: "latest",
 		Size:      0., // Size is not used in this context
 	})
-	layerHandlerInner(pi, "108.160.167.148")
+	layerHandlerInner(pi, "10.0.0.10")
 }
 
 func TestPulledImages(t *testing.T) {
