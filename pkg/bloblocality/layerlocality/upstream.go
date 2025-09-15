@@ -73,7 +73,7 @@ func GetContainerLayers(nameTag string) []RemotePrefabInfo {
 	} */
 
 	retList = append(retList, RemotePrefabInfo{
-		SpecType:  "Closure",
+		SpecType:  "Image",
 		Name:      name,
 		Specifier: tag,
 		Size:      0., // Size is not used in this context
