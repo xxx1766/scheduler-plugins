@@ -451,9 +451,12 @@ func handleRequest(w http.ResponseWriter, r *http.Request) ([]RemotePrefabInfo, 
 	var remotePrefabs []RemotePrefabInfo
 	err := json.NewDecoder(r.Body).Decode(&remotePrefabs)
 	if err != nil {
+		klog.Errorf("[Daemon] JSON decode error: %v", err)
 		http.Error(w, "[Daemon] invalid JSON payload", http.StatusBadRequest)
 		return nil, nodeIP
 	}
+
+	klog.Infof("[Daemon] Received %d remote prefabs for node %s", len(remotePrefabs), nodeIP)
 
 	return remotePrefabs, nodeIP
 }
@@ -483,6 +486,10 @@ func handleReponse(w http.ResponseWriter, r *http.Request, sizes float64) {
 
 func layerHandlerInner(remotePrefabs []RemotePrefabInfo, nodeIP string) float64 {
 	var sizes = .0
+	if len(remotePrefabs) == 0 {
+        klog.Warningf("[Daemon] No remote prefabs provided for node %s", nodeIP)
+        return .0
+    }
 
 	// example: `11.0.1.37:9988/goharbor/testimg1`
 	fullName := remotePrefabs[0].Name
