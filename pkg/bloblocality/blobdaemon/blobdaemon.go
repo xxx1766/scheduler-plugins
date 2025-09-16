@@ -20,12 +20,13 @@ import (
 
 const (
 	endPort     string = "9998"
-	upstramSvc  string = "http://9.0.3.34:9999"
-	// upstramSvc  string = "https://prefab.cs.ac.cn:10062"
+	// upstramSvc  string = "http://9.0.3.34:9999"
+	upstramSvc  string = "https://prefab.cs.ac.cn:10062"
 	workDir     string = "/root/simulating"
 	payloadJSON string = "payload.json"
 	appJSON     string = "apps.json"
 	infoJSON    string = "/PrefabService/File.json"
+	bundleJSON  string = "/bundles.json"
 	contRuntime string = "cri-o"
 )
 
@@ -33,6 +34,7 @@ type LayerData struct {
 	Digest string `json:"Digest"` // e.g., "sha256:1234567890abcdef..."
 	Size   int64  `json:"Size"`   // in bytes
 }
+
 
 type MiniImageManifest struct {
 	LayersData []LayerData `json:"LayersData"`
@@ -68,7 +70,7 @@ type LocalBundleInfo struct {
 	id      string
 	name    string
 	version string
-	size    float64 // in MiB
+	size    float64 // in B
 }
 
 type crictlImage struct {
@@ -84,6 +86,7 @@ var bm *bundle.BundleManager
 var bms = make(map[string]*bundle.BundleManager) 
 // var packageMap = make(map[string]JSONPakInfo)
 var packageMaps = make(map[string]map[string]JSONPakInfo)
+var bundleMaps = make(map[string]map[string]LocalBundleInfo)
 var mapMutex = &sync.RWMutex{}
 var virtManifestStore map[string]MiniImageManifest
 var localManifest map[string]MiniImageManifest
@@ -131,13 +134,27 @@ func ReloadFileJSON() error {
 		decoder := json.NewDecoder(file)
 		err = decoder.Decode(&tempMap)
 		file.Close()
-
 		if err != nil {
 			klog.Warningf("failed to decode %s: %v", filePath, err)
 			continue
 		}
-
 		packageMaps[folderName] = tempMap
+
+		bundleFilePath := filepath.Join(workDir+folderName, bundleJSON)
+		bundleFile, err := os.Open(bundleFilePath)
+		if err != nil {
+			klog.Warningf("failed to open %s: %v", bundleFilePath, err)
+			continue
+		}
+		var tempBundleMap map[string]LocalBundleInfo
+		decoder = json.NewDecoder(bundleFile)
+		err = decoder.Decode(&tempBundleMap)
+		bundleFile.Close()
+		if err != nil {
+			klog.Warningf("failed to decode %s: %v", bundleFilePath, err)
+			continue
+		}
+		bundleMaps[folderName] = tempBundleMap
 	}
 
 	return nil
@@ -145,9 +162,6 @@ func ReloadFileJSON() error {
 }
 
 func ReloadFileJSONFromNodeIP(nodeIP string) error {
-	mapMutex.Lock()
-	defer mapMutex.Unlock()
-
 	filePath := filepath.Join(workDir+"/"+nodeIP, infoJSON)
 	file, err := os.Open(filePath)
 	if err != nil {
@@ -162,8 +176,22 @@ func ReloadFileJSONFromNodeIP(nodeIP string) error {
 		return fmt.Errorf("failed to decode info.json: %v", err)
 	}
 	packageMaps[nodeIP] = tempMap
-	return nil
 
+	bundleFilePath := filepath.Join(workDir+"/"+nodeIP, bundleJSON)
+	bundleFile, err := os.Open(bundleFilePath)
+	if err != nil {
+		return fmt.Errorf("failed to open bundles.json: %v", err)
+	}
+	defer bundleFile.Close()
+	var tempBundleMap map[string]LocalBundleInfo
+	decoder = json.NewDecoder(bundleFile)
+	err = decoder.Decode(&tempBundleMap)
+	if err != nil {
+		return fmt.Errorf("failed to decode bundles.json: %v", err)
+	}
+	bundleMaps[nodeIP] = tempBundleMap
+
+	return nil
 }
 
 func ReloadPayloadJSON() {
@@ -179,22 +207,6 @@ func ReloadPayloadJSON() {
 	}
 
 	virtManifestStore = manifests
-}
-
-func GetPakSizeFileJSON(uuid string, nodeIP string) (int64, error) { // Note: In Bytes!
-	err := ReloadFileJSON()
-	if err != nil {
-		return 0, err
-	}
-
-	mapMutex.RLock()
-	defer mapMutex.RUnlock()
-
-	if info, exists := packageMaps[nodeIP][uuid]; exists {
-		return int64(info.Filesize), nil
-	}
-
-	return 0, fmt.Errorf("package %s not found in info.json", uuid)
 }
 
 func GetPakSizeHTTP(id string) (int64, error) {
@@ -232,26 +244,28 @@ func GetPakSizeHTTP(id string) (int64, error) {
 
 func CompareAndCalculateJSON(appE AppEntries, nodeIP string) float64 {
 	sizeInBytes := 0
-
-	for _, e := range appE.Prefabs {
-		if e.PrefabID != "" {
-			if _, exists := packageMaps[nodeIP][e.PrefabID]; exists {
-				sizeInBytes += int(e.PrefabSize)
-			} else {
-				// klog.Warningf("[Bundle Daemon] Prefab ID %s not found in info.json", e.PrefabID)
+	pkgmap := GetPulledPrefabsFromFile(nodeIP)
+	if  pkgmap == nil || len(pkgmap) == 0 {
+    	sizeInBytes = .0
+	}else{
+		for _, e := range appE.Prefabs {
+			if e.PrefabID != "" {
+				if _, exists := pkgmap[e.PrefabID]; exists {
+					sizeInBytes += int(e.PrefabSize)
+				} else {
+					// klog.Warningf("[Bundle Daemon] Prefab ID %s not found in info.json", e.PrefabID)
+				}
 			}
 		}
 	}
-
 	// fmt.Printf("[Bundle Daemon] Total size in bytes: %d B, in megabytes: %.f MiB\n", sizeInBytes, float64(sizeInBytes)
 
 	return float64(sizeInBytes) // Convert bytes to MiB
 }
 
 func CompareAndCalculate(nodeIP string, l map[string][]LocalBundleInfo, r []RemotePrefabInfo) float64 {
-	// klog.Infof("Query Local TaskC IP: %v", nodeIP)
+	klog.Infof("CompareAndCalculate: %v", nodeIP)
 	sizes := 0.0
-
 	if len(r) == 0 {
 		klog.Warningf("[Bundle Daemon] nodeIP=%v, No Remote Prefabs Found.", nodeIP)
 		return 0.0
@@ -292,39 +306,59 @@ func CompareAndCalculate(nodeIP string, l map[string][]LocalBundleInfo, r []Remo
 
 func ListLocalBundles(nodeIP string) map[string][]LocalBundleInfo {
 	// get local bundles
-	nameVersions := bms[nodeIP].ListNames() // in the format of `name (version)`
-
+	// nameVersions := bms[nodeIP].ListNames() // in the format of `name (version)`
 	var localBundleDict = make(map[string][]LocalBundleInfo)
-	for _, nameVersion := range nameVersions {
-		// nameVersion is in the format "name (version)"
-		lastOpen := strings.LastIndex(nameVersion, "(")
-		lastClose := strings.LastIndex(nameVersion, ")")
+	
+	// // From real situation
+	// for _, nameVersion := range nameVersions {
+	// 	// nameVersion is in the format "name (version)"
+	// 	lastOpen := strings.LastIndex(nameVersion, "(")
+	// 	lastClose := strings.LastIndex(nameVersion, ")")
 
-		if lastOpen == -1 || lastClose == -1 || lastClose < lastOpen {
-			klog.Warningf("[Bundle Daemon] Bundle %s does not have a valid version format.", nameVersion)
-			continue
-		}
+	// 	if lastOpen == -1 || lastClose == -1 || lastClose < lastOpen {
+	// 		klog.Warningf("[Bundle Daemon] Bundle %s does not have a valid version format.", nameVersion)
+	// 		continue
+	// 	}
 
-		name := strings.TrimSpace(nameVersion[:lastOpen])
-		version := strings.TrimSpace(nameVersion[lastOpen+1 : lastClose])
+	// 	name := strings.TrimSpace(nameVersion[:lastOpen])
+	// 	version := strings.TrimSpace(nameVersion[lastOpen+1 : lastClose])
 
-		// klog.Infof("[Bundle Daemon] Found Local Bundle: %s (%s)\n", name, version)
+	// 	// klog.Infof("[Bundle Daemon] Found Local Bundle: %s (%s)\n", name, version)
 
-		id, exists := bms[nodeIP].GetBundleID(name, version) // ensure the bundle exists in the BundleManager
+	// 	id, exists := bms[nodeIP].GetBundleID(name, version) // ensure the bundle exists in the BundleManager
 
-		if exists {
-			size, err := GetPakSizeHTTP(id)
-			if err != nil {
-				size = 1 // default size if the file size cannot be determined
-			}
-			localBundleDict[name] = append(localBundleDict[name], LocalBundleInfo{
-				id:      id, // id is not used in this context, can be set later if needed
-				name:    name,
-				version: version,
-				size:    float64(size), // in MiB
-			})
-		}
+	// 	if exists {
+	// 		size, err := GetPakSizeHTTP(id)
+	// 		if err != nil {
+	// 			size = 1 // default size if the file size cannot be determined
+	// 		}
+	// 		localBundleDict[name] = append(localBundleDict[name], LocalBundleInfo{
+	// 			id:      id, // id is not used in this context, can be set later if needed
+	// 			name:    name,
+	// 			version: version,
+	// 			size:    float64(size), // in MiB
+	// 		})
+	// 	}
+	// }
+
+	// From simulated situation
+	// ReloadFileJSONFromNodeIP(nodeIP)
+	bundlelist := GetPulledBundleNamesFromFile(nodeIP)
+	if bundlelist == nil {
+		klog.Warningf("[Bundle Daemon] nodeIP=%v, No Local Bundle Info Found.", nodeIP)
+		return localBundleDict
 	}
+	
+	for _, bundle := range bundlelist {
+		localBundleDict[bundle.name] = append(localBundleDict[bundle.name], bundle)
+	}
+	// if bundleMap, exists := bundleMaps[nodeIP]; exists {
+	// 	for _, bundle := range bundleMap {
+	// 		localBundleDict[bundle.name] = append(localBundleDict[bundle.name], bundle)
+	// 	}
+	// } else {
+	// 	klog.Warningf("[Bundle Daemon] nodeIP=%v, No Local Bundle Info Found.", nodeIP)
+	// }
 
 	return localBundleDict
 }
@@ -373,6 +407,43 @@ func GetPulledImageNames(runtime string) map[string][]string {
 
 	return imageMap
 }
+
+func GetPulledBundleNamesFromFile(nodeIP string) map[string]LocalBundleInfo {
+	bundleMap := make(map[string]LocalBundleInfo)
+
+	filePath := filepath.Join(workDir+"/"+nodeIP, bundleJSON)
+	file, err := os.ReadFile(filePath)
+	if err != nil {
+		return nil
+	}
+	
+	err = json.Unmarshal(file, &bundleMap)
+	if err != nil {
+		fmt.Printf("Error parsing JSON: %v\n", err)
+		return nil
+	}
+	
+	return bundleMap
+}
+
+func GetPulledPrefabsFromFile(nodeIP string) map[string]JSONPakInfo {
+	pakMap := make(map[string]JSONPakInfo)
+
+	filePath := filepath.Join(workDir+"/"+nodeIP, infoJSON)
+	file, err := os.ReadFile(filePath)
+	if err != nil {
+		return nil
+	}
+	
+	err = json.Unmarshal(file, &pakMap)
+	if err != nil {
+		fmt.Printf("Error parsing JSON: %v\n", err)
+		return nil
+	}
+	
+	return pakMap
+}
+
 
 func GetPulledImageNamesFromFile(nodeIP string) map[string][]string {
 	imageMap := make(map[string][]string)
@@ -549,17 +620,40 @@ func bundleHandler(w http.ResponseWriter, r *http.Request) {
 	remotePrefabs, nodeIP := handleRequest(w, r)
 
 	var sizes = .0
+	if len(remotePrefabs) == 0 {
+		klog.Warningf("[Bundle Daemon] No remote prefabs provided for node %s", nodeIP)
+		handleReponse(w, r, .0)
+		return
+	}
 	app, isFixed := apps[remotePrefabs[0].Name]
 
 	klog.Infof("[Bundle Daemon] nodeIP=%v, App: %s, Fixed: %v", nodeIP, remotePrefabs[0].Name, isFixed)
 
+	// if !isFixed {
+	// 	sizes = CompareAndCalculate(nodeIP, ListLocalBundles(nodeIP), remotePrefabs[1:]) // skip the first one which is the closure prefab
+	// } else {
+	// 	if bundleMaps[nodeIP] == nil {
+	// 		klog.Errorf("[Bundle Daemon] nodeIP=%v, Failed to reload info.json", nodeIP)
+	// 		sizes = .0
+	// 	} else {
+	// 		sizes = CompareAndCalculateJSON(app, nodeIP)
+	// 	}
+	// }
 	if !isFixed {
-		sizes = CompareAndCalculate(nodeIP, ListLocalBundles(nodeIP), remotePrefabs[1:]) // skip the first one which is the closure prefab
-	} else {
-		if ReloadFileJSONFromNodeIP(nodeIP) != nil {
-			klog.Errorf("[Bundle Daemon] nodeIP=%v, Failed to reload info.json", nodeIP)
+		sizes =  .0
+	}else {
+		// if ReloadFileJSONFromNodeIP(nodeIP) != nil {
+		// 	klog.Errorf("[Bundle Daemon] nodeIP=%v, Failed to reload info.json", nodeIP)
+		// 	sizes = .0
+		// }else {
+		// 	sizes = CompareAndCalculateJSON(app, nodeIP)
+		// }
+		
+		// check bundlelist is not None
+		bundlelist := GetPulledBundleNamesFromFile(nodeIP)
+		if bundlelist == nil || len(bundlelist) == 0 {
 			sizes = .0
-		} else {
+		}else{
 			sizes = CompareAndCalculateJSON(app, nodeIP)
 		}
 	}
@@ -571,14 +665,14 @@ func main() {
 	klog.InitFlags(nil)
 	var err error
 
-	for idx := 1; idx <= 1000; idx++ {
-		folderName := fmt.Sprintf("/10.0.%d.%d", idx/250, idx%250+1)
-		// bm, err = bundle.NewBundleManager(workDir, upstramSvc)
-		bms[folderName], err = bundle.NewBundleManager(workDir+folderName, upstramSvc)
-		if err != nil {
-			klog.Fatalf("[Bundle Daemon] Failed to create BundleManager: %v", err)
-		}
-	}
+	// for idx := 1; idx <= 1000; idx++ {
+	// 	folderName := fmt.Sprintf("/10.0.%d.%d", idx/250, idx%250+1)
+	// 	// bm, err = bundle.NewBundleManager(workDir, upstramSvc)
+	// 	bms[folderName], err = bundle.NewBundleManager(workDir+folderName, upstramSvc)
+	// 	if err != nil {
+	// 		klog.Fatalf("[Bundle Daemon] Failed to create BundleManager: %v", err)
+	// 	}
+	// }
 	
 	http.HandleFunc("/bundles/", bundleHandler)
 	http.HandleFunc("/layers/", layerHandler)
