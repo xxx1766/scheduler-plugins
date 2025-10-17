@@ -242,7 +242,7 @@ func GetPakSizeHTTP(id string) (int64, error) {
 	return contentLength, nil
 }
 
-func CompareAndCalculateJSON(appE AppEntries, nodeIP string) float64 {
+func CompareAndCalculateJSON(appE AppEntries, nodeIP string, appName string) float64{
 	sizeInBytes := 0
 	pkgmap := GetPulledPrefabsFromFile(nodeIP)
 	if  pkgmap == nil || len(pkgmap) == 0 {
@@ -258,9 +258,7 @@ func CompareAndCalculateJSON(appE AppEntries, nodeIP string) float64 {
 			}
 		}
 	}
-	// fmt.Printf("[Bundle Daemon] Total size in bytes: %d B, in megabytes: %.f MiB\n", sizeInBytes, float64(sizeInBytes)
-
-	return float64(sizeInBytes) // Convert bytes to MiB
+	return float64(sizeInBytes)
 }
 
 func CompareAndCalculate(nodeIP string, l map[string][]LocalBundleInfo, r []RemotePrefabInfo) float64 {
@@ -532,11 +530,15 @@ func handleRequest(w http.ResponseWriter, r *http.Request) ([]RemotePrefabInfo, 
 	return remotePrefabs, nodeIP
 }
 
-func handleReponse(w http.ResponseWriter, r *http.Request, sizes float64) {
+func handleReponse(w http.ResponseWriter, r *http.Request, sizes float64, ifExists bool, length int) {
 	var response struct {
 		Sizes float64 `json:"sizes"`
+		Exists bool   `json:"exists"`
+		Length int    `json:"length"`
 	}
 	response.Sizes = sizes
+	response.Exists = ifExists
+	response.Length = length
 
 	nodeIP := r.RemoteAddr
 	if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
@@ -555,11 +557,14 @@ func handleReponse(w http.ResponseWriter, r *http.Request, sizes float64) {
 	w.Write(resultBytes)
 }
 
-func layerHandlerInner(remotePrefabs []RemotePrefabInfo, nodeIP string) float64 {
+func layerHandlerInner(remotePrefabs []RemotePrefabInfo, nodeIP string) (float64, bool, int) {
 	var sizes = .0
+	var ifExists bool = false
+	var length int = 0
+
 	if len(remotePrefabs) == 0 {
-        klog.Warningf("[Daemon] No remote prefabs provided for node %s", nodeIP)
-        return .0
+        klog.Warningf("[Layer Daemon] No remote prefabs provided for node %s", nodeIP)
+        return .0, false, 0
     }
 
 	// example: `11.0.1.37:9988/goharbor/testimg1`
@@ -575,7 +580,7 @@ func layerHandlerInner(remotePrefabs []RemotePrefabInfo, nodeIP string) float64 
 	klog.Infof("[Layer Daemon] nodeIP=%v, App: %s, Fixed: %v", nodeIP, remotePrefabs[0].Name, isFixed)
 
 	if !isFixed {
-		return .0
+		return .0, false, 0
 	}
 
 	layerMap := make(map[string]float64)
@@ -603,26 +608,80 @@ func layerHandlerInner(remotePrefabs []RemotePrefabInfo, nodeIP string) float64 
 					}
 				}
 			}
+			if img == name {
+				ifExists = true		
+			}
+			length += 1
 		}
 	}
 
 	// klog.Infof("[Debug] sizes = %.f MiB\n", sizes)
 
-	return sizes
+	return sizes, ifExists, length
+}
+
+func imageHandlerInner(remotePrefabs []RemotePrefabInfo, nodeIP string) (float64, bool, int) {
+	var sizes = .0
+	var ifExists bool = false
+	var length int = 0
+	
+	if len(remotePrefabs) == 0 {
+		klog.Warningf("[Image Daemon] No remote prefabs provided for node %s", nodeIP)
+		return .0, false, 0
+	}
+
+	fullName := remotePrefabs[0].Name
+	
+	name := fullName
+	if lastSlash := strings.LastIndex(fullName, "/"); lastSlash != -1 {
+		name = fullName[lastSlash+1:]
+	}
+	
+	im, isFixed := virtManifestStore[name]
+	klog.Infof("[Image Daemon] nodeIP=%v, App: %s, Fixed: %v", nodeIP, remotePrefabs[0].Name, isFixed)
+	
+	if !isFixed {
+		return .0, false, 0
+	} 
+	
+	for img := range GetPulledImageNamesFromFile(nodeIP) {
+		if _, ok := virtManifestStore[img]; ok {
+			length += 1
+			if img == name {
+				ifExists = true
+				for _, layer := range im.LayersData {
+					sizes += float64(layer.Size)
+				}
+			}
+		}
+	}
+	
+	klog.Infof("[Image Daemon] nodeIP=%v, Total Size: %.2f B, Exists: %v, Length: %d", nodeIP, sizes, ifExists, length)
+	return sizes, ifExists, length
 }
 
 func layerHandler(w http.ResponseWriter, r *http.Request) {
 	remotePrefabs, nodeIP := handleRequest(w, r)
-	handleReponse(w, r, layerHandlerInner(remotePrefabs, nodeIP))
+	s, e, l := layerHandlerInner(remotePrefabs, nodeIP)
+	handleReponse(w, r, s, e, l)
+}
+
+func imageHandler(w http.ResponseWriter, r *http.Request) {
+	remotePrefabs, nodeIP := handleRequest(w, r)
+	s, e, l := imageHandlerInner(remotePrefabs, nodeIP)
+	handleReponse(w, r, s, e, l)
 }
 
 func bundleHandler(w http.ResponseWriter, r *http.Request) {
 	remotePrefabs, nodeIP := handleRequest(w, r)
 
 	var sizes = .0
+	var ifExists bool = false
+	var length int = 0
+
 	if len(remotePrefabs) == 0 {
 		klog.Warningf("[Bundle Daemon] No remote prefabs provided for node %s", nodeIP)
-		handleReponse(w, r, .0)
+		handleReponse(w, r, .0, false, 0)
 		return
 	}
 	app, isFixed := apps[remotePrefabs[0].Name]
@@ -641,7 +700,7 @@ func bundleHandler(w http.ResponseWriter, r *http.Request) {
 	// }
 	if !isFixed {
 		sizes =  .0
-	}else {
+	} else {
 		// if ReloadFileJSONFromNodeIP(nodeIP) != nil {
 		// 	klog.Errorf("[Bundle Daemon] nodeIP=%v, Failed to reload info.json", nodeIP)
 		// 	sizes = .0
@@ -651,14 +710,19 @@ func bundleHandler(w http.ResponseWriter, r *http.Request) {
 		
 		// check bundlelist is not None
 		bundlelist := GetPulledBundleNamesFromFile(nodeIP)
+		length = len(bundlelist)
 		if bundlelist == nil || len(bundlelist) == 0 {
 			sizes = .0
 		}else{
-			sizes = CompareAndCalculateJSON(app, nodeIP)
+			sizes = CompareAndCalculateJSON(app, nodeIP, remotePrefabs[0].Name)
 		}
+		if _, exists := bundlelist[remotePrefabs[0].Name]; exists {
+			ifExists = true
+		}
+
 	}
 
-	handleReponse(w, r, sizes)
+	handleReponse(w, r, sizes, ifExists, length)
 }
 
 func main() {
@@ -676,6 +740,7 @@ func main() {
 	
 	http.HandleFunc("/bundles/", bundleHandler)
 	http.HandleFunc("/layers/", layerHandler)
+	http.HandleFunc("/images/", imageHandler)
 
 	klog.Info(fmt.Sprintf("[Blob Daemon] Starting HTTP Server on :%s", endPort))
 	err = http.ListenAndServe(fmt.Sprintf(":%s", endPort), nil)
