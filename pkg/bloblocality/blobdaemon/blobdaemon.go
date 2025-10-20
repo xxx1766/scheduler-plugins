@@ -501,8 +501,10 @@ func handleRequest(w http.ResponseWriter, r *http.Request) ([]RemotePrefabInfo, 
 		nodeIP = strings.TrimPrefix(path, "/bundles/")
 	} else if strings.HasPrefix(path, "/layers/") {
 		nodeIP = strings.TrimPrefix(path, "/layers/")
+	} else if strings.HasPrefix(path, "/images/") {
+		nodeIP = strings.TrimPrefix(path, "/images/")
 	} else {
-		http.Error(w, "Invalid path format. Expected /bundles/{nodeIP} or /layers/{nodeIP}", http.StatusBadRequest)
+		http.Error(w, "Invalid path format. Expected /bundles/{nodeIP} or /layers/{nodeIP} or /images/{nodeIP}", http.StatusBadRequest)
 		return nil, ""
 	}
 	
